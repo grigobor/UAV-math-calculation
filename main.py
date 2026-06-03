@@ -13,6 +13,11 @@ import inputs
 import masscalculation
 import wingparametrs
 import battery
+import constantanalysis
+import wingprofile
+import verticalstabilisator
+import buildinguav
+import dynamicmodel
 
 print("\n" + "="*80)
 print("STARTING UAV DESIGN CALCULATION".center(80))
@@ -68,7 +73,7 @@ battery.print_battery_summary(battery_params)
 
 # STEP 6: VERTICAL STABILIZER
 print("\n[7/7] Computing vertical stabilizer...")
-vstab_geo = calculate_vertical_stabilizer(wing_geo['wingspan'], wing_geo['S_wing'], inputs.DesignConstants)
+vstab_geo = verticalstabilisator.calculate_vertical_stabilizer(wing_geo['wingspan'], wing_geo['S_wing'], inputs.DesignConstants)
 print(f"✓ Vertical stabilizer area: {vstab_geo['total_area']:.3f} m²")
 print(f"✓ Scale factor (central): {vstab_geo['scale_central']:.3f}x")
 print(f"✓ Scale factor (sides): {vstab_geo['scale_side']:.3f}x")
@@ -83,7 +88,7 @@ print(f"✓ Scale factor (sides): {vstab_geo['scale_side']:.3f}x")
 print("\n→ Plotting airfoil profile...")
 # profile_data = calculate_airfoil_coordinates(DesignConstants)
 # plot_airfoil_profile(profile_data)
-my_profile_data = create_airfoil()
+my_profile_data = wingprofile.create_airfoil()
 
 # 2. Wing Polar
 # print("\n→ Plotting wing drag polar...")
@@ -91,18 +96,27 @@ my_profile_data = create_airfoil()
 
 # STEP 8: Constraint Diagram
 print("\n→ Plotting constraint diagram...")
-constraints = calculate_constraint_diagram(inputsDesignConstants, m0_final, wing_geo, aero_params)
-plot_constraint_diagram(constraints, m0_final, inputs.DesignConstants)
+constraints = constantanalysis.calculate_constraint_diagram(inputs.DesignConstants, m0_final, wing_geo, aero_params)
+constantanalysis.plot_constraint_diagram(constraints, m0_final, inputs.DesignConstants)
 
 # STEP 9: Airplane with take-off wing profile 3-View
 print("\n→ Plotting airplane with take-off wing profile three-view...")
-airplane_take_off_wing = build_airplane_model(inputs.DesignConstants, wing_geo, vstab_geo, my_profile_data[1], my_profile_data[1])
-plot_airplane_views(airplane_take_off_wing)
+airplane_take_off_wing = buildinguav.build_airplane_model(inputs.DesignConstants, wing_geo, vstab_geo, my_profile_data[1], my_profile_data[1])
+buildinguav.plot_airplane_views(airplane_take_off_wing)
 
 # STEP 10: Airplane with cruise wing profile 3-View
 print("\n→ Plotting airplane with cruise wing profile three-view...")
-airplane_cruise_wing = build_airplane_model(inputs.DesignConstants, wing_geo, vstab_geo, my_profile_data[0], my_profile_data[1])
-plot_airplane_views(airplane_cruise_wing)
+airplane_cruise_wing = buildinguav.build_airplane_model(inputs.DesignConstants, wing_geo, vstab_geo, my_profile_data[0], my_profile_data[1])
+buildinguav.plot_airplane_views(airplane_cruise_wing)
+
+# STEP 11: Dynamic model of aircraft with help of JSBSim
+dynamicmodel.generate_jsbsim_aircraft_xml(wing_geo, 
+                                          mass_result['final_m0_kg'], 
+                                          "Adaptive_Tailsitter.xml", 
+                                          my_profile_data[2],  
+                                          my_profile_data[3], 
+                                          my_profile_data[4], 
+                                          my_profile_data[5])
 
 # SUMMARY REPORT
 print("\n" + "="*80)

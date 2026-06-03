@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import aerosandbox.tools.pretty_plots as p
 
+import inputs
+
 def create_airfoil():
     
     # Set up the Optimization environment
@@ -57,8 +59,8 @@ def create_airfoil():
     # Use NeuralFoil to get Aerodynamics
     aero = asymetrical_optimized_airfoil.get_aero_from_neuralfoil(
         alpha=alpha,
-        Re=DesignConstants.Re_cruise,
-        mach=DesignConstants.cruise_speed_ms / DesignConstants.cruise_speed_of_sound,
+        Re=inputs.DesignConstants.Re_cruise,
+        mach=inputs.DesignConstants.cruise_speed_ms / inputs.DesignConstants.cruise_speed_of_sound,
         model_size="large" # "large" or "xlarge" for better accuracy
     )
 
@@ -112,7 +114,7 @@ def create_airfoil():
         airfoil_characteristics(sol.value(asymetrical_optimized_airfoil), symmetric_airfoil, aoa=sol.value(alpha))
 
         #Returning both airfoils coordinates for futher use in the wing design
-        return sol.value(asymetrical_optimized_airfoil), symmetric_airfoil
+        return sol.value(asymetrical_optimized_airfoil), symmetric_airfoil, sol.value(alpha), sol.value(aero["CL"]), sol.value(aero["CD"]), sol.value(aero["CM"])
         
     except RuntimeError:
         print("Optimization failed! Plotting the 'broken' airfoil for debug...")
@@ -129,8 +131,8 @@ def plot_comparison(af_asym, af_sym, aoa):
         "MH-60 (Reference)":(asb.KulfanAirfoil("mh60"), 'orange')
     }
 
-    Re_plot = DesignConstants.Re_cruise
-    mach_plot = DesignConstants.cruise_speed_ms / DesignConstants.cruise_speed_of_sound
+    Re_plot = inputs.DesignConstants.Re_cruise
+    mach_plot = inputs.DesignConstants.cruise_speed_ms / inputs.DesignConstants.cruise_speed_of_sound
 
     fig, ax = plt.subplots(2, 1, figsize=(8, 8))
 
@@ -193,8 +195,8 @@ def airfoil_characteristics(af_asym, af_sym, aoa):
         "Symmetric (Take-off) Airfoil":(af_sym, 'red')
     }
 
-    Re_plot = DesignConstants.Re_cruise
-    mach_plot = DesignConstants.cruise_speed_ms / DesignConstants.cruise_speed_of_sound
+    Re_plot = inputs.DesignConstants.Re_cruise
+    mach_plot = inputs.DesignConstants.cruise_speed_ms / inputs.DesignConstants.cruise_speed_of_sound
 
     fig, ax = plt.subplots(3, 1, figsize=(8, 12))
 

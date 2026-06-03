@@ -1,3 +1,5 @@
+import pandas as pd
+
 def calculate_zero_approximation_mass(payload_mass):
     """Calculate zero approximation of takeoff mass based on payload."""
     return 5.147 * payload_mass ** 0.849

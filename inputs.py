@@ -1,3 +1,5 @@
+import math
+
 class DesignConstants:
     g = 9.81 
 
