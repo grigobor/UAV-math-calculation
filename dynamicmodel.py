@@ -1,37 +1,77 @@
 import jsbsim
+import os
 import numpy as np
+import matplotlib.pyplot as plt
 
-def run_jsbsim_test():
-    # 1. Initialize the FDM engine
-    # Ensure your script points to the folder containing the generated file
-    fdm = jsbsim.FGFDMExec(root_dir=".") 
-    fdm.load_model("Adaptive_Tailsitter")
-    
-    # 2. Define the initial launch state for a Tailsitter (VTOL Launch)
-    fdm["ic/vc-kts"] = 0.0          # Airspeed 0
-    fdm["ic/h-sl-ft"] = 100.0       # Starting altitude above sea level
-    fdm["ic/theta-deg"] = 90.0      # Crucial: Nose pointed directly up for VTOL!
-    
-    # Run the initialization setup
+def run_jsbsim():
+    # 1. Initialize the JSBSim Flight Dynamics Model (FDM) Executive
+    # Point root_dir to the folder containing your 'aircraft' directory
+    fdm = jsbsim.FGFDMExec(root_dir=os.getcwd())
+
+    # 2. Load your freshly generated aircraft model
+    # JSBSim look inside aircraft/Adaptive_Tailsitter/Adaptive_Tailsitter.xml
+    fdm.load_model('Adaptive_Tailsitter')
+
+    # 3. Configure Initial Conditions for a Tailsitter (VTOL Mode)
+    fdm['ic/vc-kts'] = 0.0          # Zero initial forward airspeed
+    fdm['ic/h-sl-ft'] = 3.3         # Start 3.3 feet (1 meter) above ground level
+    fdm['ic/theta-deg'] = 90.0      # Crucial: 90-degree pitch angle (nose straight up on the pad)
+    fdm['ic/phi-deg'] = 0.0         # Roll angle
+    fdm['ic/psi-true-deg'] = 0.0    # Heading
+
+    # Apply initial conditions to populate state vectors
     fdm.run_ic()
-    
-    # 3. Run a brief 5-second dynamic simulation loop
-    time_steps = []
-    pitch_angles = []
-    altitudes = []
-    
-    while fdm.run():
-        current_time = fdm["simulation/sim-time-sec"]
-        if current_time >= 5.0:
-            break
-            
-        time_steps.append(current_time)
-        pitch_angles.append(fdm["attitude/theta-deg"])
-        altitudes.append(fdm["position/h-sl-meters"])
-        
-    return time_steps, pitch_angles, altitudes
 
-def generate_jsbsim_aircraft_xml(wing_geometry, mass_kg, filename, alphas, cls, cds, cms):
+    # 4. Prepare data logging containers
+    sim_time = []
+    altitude = []
+    pitch_angle = []
+    thrust_cmd = []
+
+    # 5. The Simulation Loop (Step through time)
+    # Default JSBSim time step is usually 1/120th of a second (dt = 0.008333s)
+    sim_duration_sec = 15.0 
+
+    while fdm.run():
+        current_time = fdm['simulation/sim-time-sec']
+        sim_time.append(current_time)
+        
+        # Log properties of interest
+        altitude.append(fdm['position/h-sl-ft'])
+        pitch_angle.append(fdm['attitude/theta-deg'])
+        thrust_cmd.append(fdm['fcs/throttle-cmd-norm[0]'])
+        
+        # Example: Inject control inputs or pilot commands over time
+        if current_time < 2.0:
+            fdm['fcs/throttle-cmd-norm'] = 0.85  # Punch throttle to lift off vertically
+        elif 2.0 <= current_time < 6.0:
+            fdm['fcs/throttle-cmd-norm'] = 0.60  # Steady hover power
+            fdm['fcs/elevator-cmd-norm'] = 0.1   # Command a slight pitch-forward moment to begin transition
+        else:
+            # Simulate moving into forward flight
+            fdm['fcs/elevator-cmd-norm'] = 0.0
+        
+        # Break loop once target time is achieved
+        if current_time >= sim_duration_sec:
+            break
+
+    print(f"Calculation complete. Simulated {len(sim_time)} iterations successfully.")
+
+    # 6. Plotting your Dynamic Aerodynamic Response
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    ax1.plot(sim_time, altitude, 'b-', label='Altitude (ft)')
+    ax1.set_ylabel('Altitude [ft]')
+    ax1.grid(True)
+
+    ax2.plot(sim_time, pitch_angle, 'r-', label='Pitch Angle (deg)')
+    ax2.axhline(90, color='gray', linestyle='--', label='Vertical Launch Orientation')
+    ax2.set_ylabel('Pitch [deg]')
+    ax2.set_xlabel('Simulation Time [sec]')
+    ax2.grid(True)
+    ax2.legend()
+    plt.show()
+
+def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, filename, alphas, cls, cds, cms):
     """Generates a JSBSim flight dynamics model configuration from Python variables."""
     
     alphas = np.array(alphas).flatten()
@@ -57,14 +97,22 @@ def generate_jsbsim_aircraft_xml(wing_geometry, mass_kg, filename, alphas, cls, 
     xml_content = f"""<?xml version="1.0"?>
 <fdm_config name="Adaptive_Tailsitter" version="2.0" release="BETA">
     <fileheader>
-        <author>Grigory</author>
-        <description>Auto-generated from AeroSandbox/NeuralFoil Optimization</description>
+        <author>Grigorii Borodachev</author>
+        <organization>
+            Department of Aeronautical Engineering,
+            Moscow Aviation Institut,
+            Russia
+        </organization>
+        <version>0.1</version>
+        <description>Model a 2026 G1-T UAV</description>
     </fileheader>
 
     <metrics>
         <wingarea unit="M2"> {wing_geometry['S_wing']:.4f} </wingarea>
         <wingspan unit="M"> {wing_geometry['wingspan']:.4f} </wingspan>
         <chord unit="M"> {wing_geometry['MAC']:.4f} </chord>
+        <vtailarea unit="M2"> {stabilizer_geometry['total_area']:.4f} </vtailarea>
+        <vtailarm unit="M"> {stabilizer_geometry['arm']:.4f} </vtailarm>
         <location name="AERORP" unit="M">
             <x> {aerorp_x:.4f} </x> <y> 0.0 </y> <z> 0.0 </z>
         </location>
