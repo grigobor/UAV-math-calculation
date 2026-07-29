@@ -111,12 +111,15 @@ buildinguav.plot_airplane_views(airplane_cruise_wing)
 
 # STEP 11: Dynamic model of aircraft with help of JSBSim
 dynamicmodel.generate_jsbsim_aircraft_xml(wing_geo, 
+                                          vstab_geo,
                                           mass_result['final_m0_kg'], 
                                           "Adaptive_Tailsitter.xml", 
                                           my_profile_data[2],  
                                           my_profile_data[3], 
                                           my_profile_data[4], 
                                           my_profile_data[5])
+
+dynamicmodel.run_jsbsim()
 
 # SUMMARY REPORT
 print("\n" + "="*80)
