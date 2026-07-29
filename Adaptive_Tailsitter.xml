@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<fdm_config name="Adaptive_Tailsitter" version="2.0" release="BETA">
+    <fileheader>
+        <author>Grigory</author>
+        <description>Auto-generated from AeroSandbox/NeuralFoil Optimization</description>
+    </fileheader>
+
+    <metrics>
+        <wingarea unit="M2"> 0.3629 </wingarea>
+        <wingspan unit="M"> 1.7038 </wingspan>
+        <chord unit="M"> 0.2183 </chord>
+        <location name="AERORP" unit="M">
+            <x> 0.0546 </x> <y> 0.0 </y> <z> 0.0 </z>
+        </location>
+        <location name="VRP" unit="M">
+            <x> 0.0 </x> <y> 0.0 </y> <z> 0.0 </z>
+        </location>
+    </metrics>
+
+    <mass_balance>
+        <ixx unit="KGM2"> 1.7911 </ixx>
+        <iyy unit="KGM2"> 0.0294 </iyy>
+        <izz unit="KGM2"> 1.8205 </izz>
+        <emptywt unit="KG"> 7.4036 </emptywt>
+        <location name="CG" unit="M">
+            <x> 0.0437 </x> <y> 0.0 </y> <z> 0.0 </z>
+        </location>
+    </mass_balance>
+
+    <aerodynamics>
+        <axis name="LIFT">
+            <function name="aero/force/Lift_alpha">
+                <product>
+                    <property>aero/qbar-area</property>
+                    <table>
+                        <independentVar lookup="row">aero/alpha-deg</independentVar>
+                        <tableData>
+       4.1 0.4290
+       4.8 0.5000
+       6.3 0.7000
+       7.9 0.9000
+      10.0 1.1000
+                        </tableData>
+                    </table>
+                </product>
+            </function>
+        </axis>
+
+        <axis name="DRAG">
+            <function name="aero/force/Drag_alpha">
+                <product>
+                    <property>aero/qbar-area</property>
+                    <table>
+                        <independentVar lookup="row">aero/alpha-deg</independentVar>
+                        <tableData>
+       4.1 0.0088
+       4.8 0.0090
+       6.3 0.0100
+       7.9 0.0117
+      10.0 0.0160
+                        </tableData>
+                    </table>
+                </product>
+            </function>
+        </axis>
+
+        <axis name="PITCH">
+            <function name="aero/moment/Pitch_alpha">
+                <product>
+                    <property>aero/qbar-area</property>
+                    <property>metrics/cbar-m</property>
+                    <table>
+                        <independentVar lookup="row">aero/alpha-deg</independentVar>
+                        <tableData>
+       4.1 0.0254
+       4.8 0.0260
+       6.3 0.0201
+       7.9 0.0150
+      10.0 0.0184
+                        </tableData>
+                    </table>
+                </product>
+            </function>
+        </axis>
+    </aerodynamics>
+</fdm_config>
