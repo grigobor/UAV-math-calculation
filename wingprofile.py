@@ -11,37 +11,43 @@ import aerosandbox.tools.pretty_plots as p
 
 import inputs
 
-def create_airfoil():
-    
-    # Set up the Optimization environment
+
+# ---------------------------------------------------------------------------
+# HORIZONTAL / CRUISE AIRFOIL -- asymmetric, free trailing edge
+# ---------------------------------------------------------------------------
+def optimize_cruise_airfoil():
+    """
+    Optimize a cambered airfoil for cruise. Only the leading edge is
+    constrained (upper = -lower at the first two CST stations, to keep a
+    round, well-posed nose). The trailing-edge CST weight is left free on
+    both surfaces, so the aft camber -- where camber has the most leverage
+    on CL and CM -- can actually develop, instead of being forced back to
+    a symmetric shape.
+    """
     opti = asb.Opti()
 
     CL_multipoint_targets = np.array([0.3, 0.5, 0.7, 0.9, 1.1])
     CL_multipoint_weights = np.array([3, 4, 5, 6, 7])
 
-    # Starting point is NACA0012
     initial_airfoil = asb.KulfanAirfoil("naca0012")
 
-    # Define upper line of airfoil parameters
     upper_weights = opti.variable(
-        init_guess=initial_airfoil.upper_weights, 
-        lower_bound=-0.5, 
+        init_guess=initial_airfoil.upper_weights,
+        lower_bound=-0.5,
         upper_bound=0.25
-        )
-    
-    # Define lower line of airfoil parameters
+    )
     lower_weights = opti.variable(
-        init_guess=initial_airfoil.lower_weights, 
-        lower_bound=-0.25, 
+        init_guess=initial_airfoil.lower_weights,
+        lower_bound=-0.25,
         upper_bound=0.5
-        )
+    )
 
-    # Leading and trailind edges have to be equal for symmetrical and asymmetrical airfoils.
+    # Leading edge only -- keeps the nose round and well-posed.
     opti.subject_to(upper_weights[0:2] == -lower_weights[0:2])
-    opti.subject_to(upper_weights[-1] == lower_weights[-1])
+    # (No trailing-edge equality constraint here -- this is the whole point:
+    # the aft surface is now free to be asymmetric.)
 
-    # Choosing characteristics for my asymmetric airfoil (for better CL at cruise)
-    asymetrical_optimized_airfoil = asb.KulfanAirfoil(
+    cruise_airfoil = asb.KulfanAirfoil(
         name="Asymmetric Cruise Airfoil",
         upper_weights=upper_weights,
         lower_weights=lower_weights,
@@ -49,86 +55,340 @@ def create_airfoil():
         TE_thickness=0,
     )
 
-    # Alpha is the angle of attack, which can be also be optimized.
     alpha = opti.variable(
-        init_guess=np.degrees(CL_multipoint_targets / (2 * np.pi)), # Estimated angle of attack, start of countdown
-        lower_bound=-5, 
+        init_guess=np.degrees(CL_multipoint_targets / (2 * np.pi)),
+        lower_bound=-5,
         upper_bound=15,
     )
 
-    # Use NeuralFoil to get Aerodynamics
-    aero = asymetrical_optimized_airfoil.get_aero_from_neuralfoil(
+    aero = cruise_airfoil.get_aero_from_neuralfoil(
         alpha=alpha,
         Re=inputs.DesignConstants.Re_cruise,
         mach=inputs.DesignConstants.cruise_speed_ms / inputs.DesignConstants.cruise_speed_of_sound,
-        model_size="large" # "large" or "xlarge" for better accuracy
+        model_size="large"
     )
 
-    # Setting additional restrictions on the airfoil shape.
     opti.subject_to(
         [
             aero["CL"] >= CL_multipoint_targets,
-            aero["CM"] >= 0.015,
-            asymetrical_optimized_airfoil.local_thickness(x_over_c=0.005) >= 0.01,
-            asymetrical_optimized_airfoil.local_thickness(x_over_c=0.33) >= 0.05, 
-            asymetrical_optimized_airfoil.local_thickness(x_over_c=0.90) >= 0.014,
-            #asymetrical_optimized_airfoil.max_thickness() >= 0.10,
-            asymetrical_optimized_airfoil.local_thickness() <= 0.12,
-            asymetrical_optimized_airfoil.local_thickness() > 0,
+            # Loosened from >= 0.015. That threshold was forcing a strongly
+            # reflexed trailing edge (needed for tailless pitch stability)
+            # which directly cancels the camber benefit you just freed up.
+            # -0.02 still keeps CM out of strongly-unstable territory but
+            # stops demanding a hard reflex from the 2D section -- pitch
+            # trim for the full aircraft should come mainly from wing
+            # washout (see the twist=3.5 / twist=1.5 split already in
+            # buildinguav.py) rather than every section reflexing itself
+            # back toward symmetric.
+            aero["CM"] >= -0.02,
+            cruise_airfoil.local_thickness(x_over_c=0.005) >= 0.01,
+            cruise_airfoil.local_thickness(x_over_c=0.33) >= 0.05,
+            # New: thickness floor further aft than before (was only
+            # enforced at 90% chord, where 0.014 is thin enough that the
+            # solver was tapering the whole aft section down early). This
+            # keeps enough section depth at 60% chord for spar/servo/
+            # structure to actually fit, without constraining the shape
+            # forward of it.
+            cruise_airfoil.local_thickness(x_over_c=0.60) >= 0.035,
+            cruise_airfoil.local_thickness(x_over_c=0.90) >= 0.014,
+            cruise_airfoil.local_thickness() <= 0.12,
+            cruise_airfoil.local_thickness() > 0,
         ]
     )
 
-    # Prevention of micro-rippling
-    get_wiggliness = lambda af: sum( 
+    get_wiggliness = lambda af: sum(
         [
             np.sum(np.diff(np.diff(array)) ** 2)
             for array in [af.lower_weights, af.upper_weights]
         ]
     )
     opti.subject_to(
-        get_wiggliness(asymetrical_optimized_airfoil) < 2 * get_wiggliness(initial_airfoil),
+        get_wiggliness(cruise_airfoil) < 2 * get_wiggliness(initial_airfoil),
     )
 
-    opti.minimize(np.mean(aero["CD"] * CL_multipoint_weights))
+    # Small alpha penalty: CL targets are still hard constraints, so this
+    # doesn't stop the airfoil from meeting them -- it just removes the
+    # solver's incentive to satisfy CL cheaply via angle-of-attack instead
+    # of camber once camber is no longer penalized by the reflex
+    # requirement above. Weight is small on purpose: large enough to break
+    # the "just pitch up" tie, small enough not to fight the CD objective.
+    alpha_penalty_weight = 0.002
+    opti.minimize(
+        np.mean(aero["CD"] * CL_multipoint_weights)
+        + alpha_penalty_weight * np.mean(alpha ** 2)
+    )
 
-    # Solve
-    try:
-        sol = opti.solve()
+    sol = opti.solve()
 
-        opt_upper = sol.value(upper_weights)
-        opt_lower = sol.value(lower_weights)
-        opt_le = sol.value(asymetrical_optimized_airfoil.leading_edge_weight)
+    return (
+        sol.value(cruise_airfoil),
+        sol.value(alpha),
+        sol.value(aero["CL"]),
+        sol.value(aero["CD"]),
+        sol.value(aero["CM"]),
+    )
 
-        sym_weights = (opt_upper - opt_lower) / 2
 
-        symmetric_airfoil = asb.KulfanAirfoil(
-            name="Symmetric State",
-            upper_weights=sym_weights,
-            lower_weights=-sym_weights,
-            leading_edge_weight=opt_le,
-            TE_thickness=0
-        )
+# ---------------------------------------------------------------------------
+# VERTICAL / HOVER AIRFOIL -- fully symmetric, independently optimized
+# ---------------------------------------------------------------------------
+def optimize_hover_airfoil():
+    """
+    Optimize a genuinely symmetric airfoil for the vertical/hover mode,
+    completely independently of the cruise shape (no derivation, no shared
+    weights). Symmetry is built in structurally (lower = -upper) rather
+    than imposed as a constraint, so it's exact and one less thing for the
+    solver to satisfy.
 
-        #Building comparison plot
-        plot_comparison(sol.value(asymetrical_optimized_airfoil), symmetric_airfoil, aoa=sol.value(alpha))
-        airfoil_characteristics(sol.value(asymetrical_optimized_airfoil), symmetric_airfoil, aoa=sol.value(alpha))
+    Objective: minimize drag across an angle-of-attack sweep relevant to
+    hover / transition, since a tailsitter's wing sits in prop wash at
+    varying incidence during that phase. CL == 0 at alpha == 0 falls out
+    automatically from the symmetry, so there's no need to target it.
+    """
+    opti = asb.Opti()
 
-        #Returning both airfoils coordinates for futher use in the wing design
-        return sol.value(asymetrical_optimized_airfoil), symmetric_airfoil, sol.value(alpha), sol.value(aero["CL"]), sol.value(aero["CD"]), sol.value(aero["CM"])
-        
-    except RuntimeError:
-        print("Optimization failed! Plotting the 'broken' airfoil for debug...")
-        # This pulls the last known values from the solver's memory
-        failed_af = opti.debug.value(asymetrical_optimized_airfoil)
-        failed_af.draw()
-        raise # Still stop the code so you can read the error
+    initial_airfoil = asb.KulfanAirfoil("naca0012")
 
-def plot_comparison(af_asym, af_sym, aoa):
+    weights = opti.variable(
+        init_guess=initial_airfoil.upper_weights,
+        lower_bound=-0.5,
+        upper_bound=0.5,
+    )
+
+    hover_airfoil = asb.KulfanAirfoil(
+        name="Symmetric Hover Airfoil",
+        upper_weights=weights,
+        lower_weights=-weights,
+        leading_edge_weight=0,
+        TE_thickness=0,
+    )
+
+    alphas_hover = np.array([0, 3, 6, 10, 15])
+
+    aero = hover_airfoil.get_aero_from_neuralfoil(
+        alpha=alphas_hover,
+        Re=inputs.DesignConstants.Re_cruise,
+        mach=inputs.DesignConstants.cruise_speed_ms / inputs.DesignConstants.cruise_speed_of_sound,
+        model_size="large"
+    )
+
+    opti.subject_to(
+        [
+            hover_airfoil.local_thickness(x_over_c=0.005) >= 0.01,
+            hover_airfoil.local_thickness(x_over_c=0.33) >= 0.05,
+            hover_airfoil.local_thickness(x_over_c=0.90) >= 0.014,
+            hover_airfoil.local_thickness() <= 0.12,
+            hover_airfoil.local_thickness() > 0,
+        ]
+    )
+
+    get_wiggliness = lambda af: np.sum(np.diff(np.diff(af.upper_weights)) ** 2)
+    opti.subject_to(
+        get_wiggliness(hover_airfoil) < 2 * get_wiggliness(initial_airfoil),
+    )
+
+    opti.minimize(np.mean(aero["CD"]))
+
+    sol = opti.solve()
+
+    return (
+        sol.value(hover_airfoil),
+        alphas_hover,
+        sol.value(aero["CL"]),
+        sol.value(aero["CD"]),
+        sol.value(aero["CM"]),
+    )
+
+
+
+# ---------------------------------------------------------------------------
+# THE ADAPTIVE AIRFOIL: one physical shape, morphing between the two optima
+# ---------------------------------------------------------------------------
+def morph_airfoil(hover_af, cruise_af, t, name=None):
+    """
+    Return the airfoil at morph state `t`, by linearly interpolating the
+    Kulfan (CST) weights between the hover shape (t=0) and the cruise
+    shape (t=1).
+
+    This works because both airfoils are expressed on the *same* CST
+    basis (same number of weights, same Bernstein order) -- they were
+    both initialized from the same naca0012 KulfanAirfoil, so the weight
+    vectors line up one-to-one. Interpolating coefficients on a shared
+    polynomial basis is what actually gives you a continuous, physically
+    realizable family of shapes -- this is the standard way morphing/CST
+    airfoils are represented in the literature (e.g. compliant/morphing
+    skin structures whose surface follows a blended CST shape as an
+    actuator moves it from one designed state to another).
+
+    Parameters
+    ----------
+    hover_af, cruise_af : asb.KulfanAirfoil
+        The two independently-optimized endpoint shapes.
+    t : float or array-like, 0 to 1
+        Morph state. 0 = hover (symmetric), 1 = cruise (asymmetric).
+        Values outside [0, 1] are allowed if you want to check
+        overshoot/extrapolation, but aren't physically meaningful.
+
+    Returns
+    -------
+    asb.KulfanAirfoil
+    """
+    assert len(hover_af.upper_weights) == len(cruise_af.upper_weights), (
+        "Hover and cruise airfoils must share the same CST order to morph "
+        "between them -- make sure both are still initialized from the "
+        "same base KulfanAirfoil."
+    )
+
+    upper = (1 - t) * hover_af.upper_weights + t * cruise_af.upper_weights
+    lower = (1 - t) * hover_af.lower_weights + t * cruise_af.lower_weights
+    le_weight = (1 - t) * hover_af.leading_edge_weight + t * cruise_af.leading_edge_weight
+    te_thickness = (1 - t) * hover_af.TE_thickness + t * cruise_af.TE_thickness
+
+    return asb.KulfanAirfoil(
+        name=name or f"Adaptive Airfoil (t={t:.2f})",
+        upper_weights=upper,
+        lower_weights=lower,
+        leading_edge_weight=le_weight,
+        TE_thickness=te_thickness,
+    )
+
+
+def sample_morph_sequence(hover_af, cruise_af, n=11):
+    """Convenience: list of KulfanAirfoils evenly spaced from t=0 to t=1."""
+    ts = np.linspace(0, 1, n)
+    return [morph_airfoil(hover_af, cruise_af, t) for t in ts], ts
+
+
+def validate_morph_path(hover_af, cruise_af, n=11,
+                         Re=None, mach=None, alpha_check=0.0,
+                         min_thickness=0.005):
+    """
+    Sanity-check the morph path before you commit to building it: since
+    the two endpoints were optimized *independently*, nothing guarantees
+    the shapes in between stay well-behaved (thin sections pinching to
+    zero thickness, self-intersecting surfaces, or a CD/CL that spikes
+    partway through the morph instead of varying smoothly). This sweeps
+    t and reports thickness and aero at each state so you can catch a bad
+    intermediate shape before it's a physical part.
+
+    Returns a pandas DataFrame with one row per t.
+    """
+    if Re is None:
+        Re = inputs.DesignConstants.Re_cruise
+    if mach is None:
+        mach = inputs.DesignConstants.cruise_speed_ms / inputs.DesignConstants.cruise_speed_of_sound
+
+    airfoils, ts = sample_morph_sequence(hover_af, cruise_af, n=n)
+    rows = []
+    for t, af in zip(ts, airfoils):
+        min_t = af.local_thickness()  # array of thickness values along chord
+        aero = af.get_aero_from_neuralfoil(alpha=alpha_check, Re=Re, mach=mach, model_size="large")
+        rows.append({
+            "t": round(float(t), 3),
+            "min_local_thickness": float(np.min(min_t)),
+            "thickness_ok": bool(np.min(min_t) >= min_thickness),
+            "CL": float(aero["CL"]),
+            "CD": float(aero["CD"]),
+            "CM": float(aero["CM"]),
+        })
+
+    df = pd.DataFrame(rows)
+    if not df["thickness_ok"].all():
+        print("⚠ Morph path has intermediate shapes below the minimum thickness "
+              "-- inspect these t values before building the structure:")
+        print(df[~df["thickness_ok"]])
+    else:
+        print(f"✓ Morph path OK: all {n} intermediate shapes meet the "
+              f"{min_thickness:.3f} min thickness requirement.")
+    return df
+
+
+def export_morph_sequence(hover_af, cruise_af, n=11, n_points_per_side=100,
+                           out_dir="."):
+    """
+    Write a .dat coordinate file (Selig format, same style as
+    my_custom_airfoil.dat) for each morph state -- one per manufactured
+    /interpolated cross-section, for CAD or CFD use.
+    """
+    import os
+    airfoils, ts = sample_morph_sequence(hover_af, cruise_af, n=n)
+    paths = []
+    for t, af in zip(ts, airfoils):
+        discretized = af.to_airfoil(n_points_per_side=n_points_per_side)
+        fname = os.path.join(out_dir, f"morph_t{t:.2f}.dat")
+        with open(fname, "w") as f:
+            f.write(f"Adaptive Airfoil t={t:.2f}\n")
+            for x, y in discretized.coordinates:
+                f.write(f"{x:.6f} {y:.6f}\n")
+        paths.append(fname)
+    print(f"✓ Wrote {len(paths)} morph-state .dat files to {out_dir}")
+    return paths
+
+
+def plot_morph_sequence(hover_af, cruise_af, n=7):
+    """Overlay the morph sequence to visually confirm a smooth, non-self-
+    intersecting transformation from hover to cruise shape."""
+    airfoils, ts = sample_morph_sequence(hover_af, cruise_af, n=n)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    cmap = plt.get_cmap("coolwarm")
+    for t, af in zip(ts, airfoils):
+        color = cmap(t)
+        ax.plot(af.x(), af.y(), color=color, linewidth=2,
+                label=f"t={t:.2f}" if t in (0.0, 1.0) else None)
+
+    ax.set_title("Adaptive Airfoil: Morph Path from Hover (t=0) to Cruise (t=1)",
+                 fontsize=12, fontweight='bold')
+    ax.set_xlabel("$x/c$")
+    ax.set_ylabel("$y/c$")
+    ax.axis("equal")
+    ax.legend(fontsize=10)
+    plt.tight_layout()
+    p.show_plot(title=None, legend=False)
+
+
+def create_airfoil():
+    """
+    Runs both independent optimizations, builds and validates the morph
+    path between them, and returns results in a shape main.py can use.
+
+    Returns
+    -------
+    tuple:
+        cruise_airfoil, hover_airfoil,
+        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
+        hover_alpha, hover_CL, hover_CD, hover_CM,
+        morph_fn  -- call morph_fn(t) to get the airfoil at any morph
+                     state 0..1 (this is what buildinguav.py should call
+                     for the wing cross-sections at a given flight phase,
+                     instead of hardcoding the two endpoints).
+    """
+    cruise_airfoil, cruise_alpha, cruise_CL, cruise_CD, cruise_CM = optimize_cruise_airfoil()
+    hover_airfoil, hover_alpha, hover_CL, hover_CD, hover_CM = optimize_hover_airfoil()
+
+    plot_comparison(cruise_airfoil, hover_airfoil)
+    airfoil_characteristics(cruise_airfoil, hover_airfoil)
+
+    validate_morph_path(hover_airfoil, cruise_airfoil, n=11)
+    plot_morph_sequence(hover_airfoil, cruise_airfoil, n=7)
+
+    def morph_fn(t):
+        return morph_airfoil(hover_airfoil, cruise_airfoil, t)
+
+    return (
+        cruise_airfoil, hover_airfoil,
+        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
+        hover_alpha, hover_CL, hover_CD, hover_CM,
+        morph_fn,
+    )
+
+
+def plot_comparison(af_asym, af_sym):
     airfoils_and_colors = {
-        "Asymmetric (Cruise) Aurfoil":(af_asym, 'blue'),
-        "Symmetric (Take-off) Airfoil":(af_sym, 'red'),
-        "NACA0012 (Baseline)":(asb.KulfanAirfoil("naca0012"), 'green'),
-        "MH-60 (Reference)":(asb.KulfanAirfoil("mh60"), 'orange')
+        "Asymmetric (Horizontal/Cruise) Airfoil": (af_asym, 'blue'),
+        "Symmetric (Vertical/Hover) Airfoil": (af_sym, 'red'),
+        "NACA0012 (Baseline)": (asb.KulfanAirfoil("naca0012"), 'green'),
+        "MH-60 (Reference)": (asb.KulfanAirfoil("mh60"), 'orange')
     }
 
     Re_plot = inputs.DesignConstants.Re_cruise
@@ -157,19 +417,15 @@ def plot_comparison(af_asym, af_sym, aoa):
             aero["CD"],
             aero["CL"],
             color=color,
-            # linewidth=2,
             label=name,
             alpha=0.8
         )
-
-    # fig.suptitle("Adaptive Wing Morphing: Performance & Stability Analysis", fontsize=15, fontweight='bold', y=0.98)
 
     ax[0].legend(fontsize=11, loc="lower center", ncol=len(airfoils_and_colors) // 2)
     ax[0].set_title("I. Airfoil Profile Geometry", fontsize=12, fontweight='bold')
     ax[0].set_xlabel("$x/c$")
     ax[0].set_ylabel("$y/c$")
     ax[0].axis("equal")
-    # ax[0].grid(True, alpha=0.3)
 
     ax[1].legend(fontsize=11, loc="lower right", ncol=len(airfoils_and_colors) // 2)
     ax[1].set_title(f"II. Aerodynamic Polar ($Re={Re_plot/1e3:.0f}k$)", fontsize=12, fontweight='bold')
@@ -177,22 +433,15 @@ def plot_comparison(af_asym, af_sym, aoa):
     ax[1].set_ylabel("Lift Coefficient $C_L$")
     ax[1].set_xlim(0, 0.035)
     ax[1].set_ylim(-0.2, 1.6)
-    #ax[1].grid(True, alpha=0.3)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
+    p.show_plot(title=None, legend=False)
 
-    #plt.tight_layout()
-    p.show_plot(
-        #"Comparison of Adaptive Wing States",
-        #show=True
-        title=None,
-        legend=False
-    )
 
-def airfoil_characteristics(af_asym, af_sym, aoa):
+def airfoil_characteristics(af_asym, af_sym):
     airfoils_and_colors = {
-        "Asymmetric (Cruise) Aurfoil":(af_asym, 'blue'),
-        "Symmetric (Take-off) Airfoil":(af_sym, 'red')
+        "Asymmetric (Horizontal/Cruise) Airfoil": (af_asym, 'blue'),
+        "Symmetric (Vertical/Hover) Airfoil": (af_sym, 'red')
     }
 
     Re_plot = inputs.DesignConstants.Re_cruise
@@ -207,31 +456,9 @@ def airfoil_characteristics(af_asym, af_sym, aoa):
             Re=Re_plot,
             mach=mach_plot,
         )
-        ax[0].plot(
-            alphas,
-            aero["CL"],
-            color=color,
-            # linewidth=2,
-            label=name,
-            alpha=0.8
-        )
-        ax[1].plot(
-            alphas,
-            aero["CD"],
-            color=color,
-            label=name,
-            alpha=0.8,
-            linewidth=2
-        )
-        ax[2].plot(
-            alphas,
-            aero["CM"],
-            color=color,
-            label=name,
-            alpha=0.8
-        )
-
-    # fig.suptitle("Adaptive Wing Morphing: Performance & Stability Analysis", fontsize=15, fontweight='bold', y=0.98)
+        ax[0].plot(alphas, aero["CL"], color=color, label=name, alpha=0.8)
+        ax[1].plot(alphas, aero["CD"], color=color, label=name, alpha=0.8, linewidth=2)
+        ax[2].plot(alphas, aero["CM"], color=color, label=name, alpha=0.8)
 
     ax[0].legend(fontsize=11, loc="lower right", ncol=len(airfoils_and_colors) // 2)
     ax[0].set_title(f"I. Lift Coefficient vs. Alpha ($Re={Re_plot/1e3:.0f}k$)", fontsize=12, fontweight='bold')
@@ -239,7 +466,6 @@ def airfoil_characteristics(af_asym, af_sym, aoa):
     ax[0].set_ylabel("Lift Coefficient $C_L$")
     ax[0].grid(True, alpha=0.3)
     ax[0].set_ylim(-1.8, 1.8)
-    #ax[1].grid(True, alpha=0.3)
 
     ax[1].legend(fontsize=11, loc="lower right", ncol=len(airfoils_and_colors) // 2)
     ax[1].set_title("II. Drag Coefficient vs. Alpha", fontsize=12, fontweight='bold')
@@ -256,11 +482,4 @@ def airfoil_characteristics(af_asym, af_sym, aoa):
     ax[2].set_ylim(-0.25, 0.1)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-
-    #plt.tight_layout()
-    p.show_plot(
-        #"Comparison of Adaptive Wing States",
-        #show=True
-        title=None,
-        legend=False
-    )
+    p.show_plot(title=None, legend=False)

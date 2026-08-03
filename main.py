@@ -1,4 +1,7 @@
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')
+plt.ion()
 import numpy as np
 import math
 import pandas as pd
@@ -102,15 +105,15 @@ constantanalysis.plot_constraint_diagram(constraints, m0_final, inputs.DesignCon
 # STEP 9: Airplane with take-off wing profile 3-View
 print("\n→ Plotting airplane with take-off wing profile three-view...")
 airplane_take_off_wing = buildinguav.build_airplane_model(inputs.DesignConstants, wing_geo, vstab_geo, my_profile_data[1], my_profile_data[1])
-buildinguav.plot_airplane_views(airplane_take_off_wing)
+#buildinguav.plot_airplane_views(airplane_take_off_wing)
 
 # STEP 10: Airplane with cruise wing profile 3-View
 print("\n→ Plotting airplane with cruise wing profile three-view...")
 airplane_cruise_wing = buildinguav.build_airplane_model(inputs.DesignConstants, wing_geo, vstab_geo, my_profile_data[0], my_profile_data[1])
-buildinguav.plot_airplane_views(airplane_cruise_wing)
+#buildinguav.plot_airplane_views(airplane_cruise_wing)
 
 # STEP 11: Dynamic model of aircraft with help of JSBSim
-dynamicmodel.generate_jsbsim_aircraft_xml(wing_geo, 
+"""dynamicmodel.generate_jsbsim_aircraft_xml(wing_geo, 
                                           vstab_geo,
                                           mass_result['final_m0_kg'], 
                                           "Adaptive_Tailsitter.xml", 
@@ -119,7 +122,7 @@ dynamicmodel.generate_jsbsim_aircraft_xml(wing_geo,
                                           my_profile_data[4], 
                                           my_profile_data[5])
 
-dynamicmodel.run_jsbsim()
+dynamicmodel.run_jsbsim()"""
 
 # SUMMARY REPORT
 print("\n" + "="*80)
@@ -169,3 +172,6 @@ print(summary_report)
 print("="*80)
 print("✓ All calculations completed successfully!".center(80))
 print("="*80 + "\n")
+
+plt.ioff()
+plt.show()
