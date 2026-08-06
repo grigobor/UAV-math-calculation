@@ -25,5 +25,6 @@ def calculate_vertical_stabilizer(wingspan, S_wing, const):
         "S_central": S_vt_central,
         "S_side": S_vt_side,
         "scale_central": scale_central,
-        "scale_side": scale_side
+        "scale_side": scale_side,
+        "arm": vertical_shoulder_stab
     }

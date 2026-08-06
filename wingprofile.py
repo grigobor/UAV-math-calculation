@@ -483,3 +483,77 @@ def airfoil_characteristics(af_asym, af_sym):
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     p.show_plot(title=None, legend=False)
+
+def extend_trailing_edge(base_chord, extension_fraction):
+    """
+    Physical chord after a Fowler-style telescoping TE extension.
+
+    The Kulfan/CST weights (normalized x/c shape) don't change -- a
+    telescoping TE slides the aft structure aft without reshaping the
+    section. Only the physical chord grows. Everything downstream
+    (chord, wing area, Re) must be scaled by the same chord_multiplier
+    to stay geometrically consistent between the two states.
+    """
+    chord_multiplier = 1.0 + extension_fraction
+    return {
+        "chord_multiplier": chord_multiplier,
+        "extended_chord": base_chord * chord_multiplier,
+    }
+
+
+def find_extension_for_target(base_chord, target_chord):
+    """Inverse of extend_trailing_edge: solve extension_fraction/chord_multiplier
+    needed to reach a target chord (e.g. from a required cruise CL or a
+    structural constraint)."""
+    chord_multiplier = target_chord / base_chord
+    return {
+        "chord_multiplier": chord_multiplier,
+        "extension_fraction": chord_multiplier - 1.0,
+    }
+
+
+def compare_hover_cruise_geometry(wing_geo, const, chord_multiplier):
+    """
+    Side-by-side table of hover (t=0, retracted) vs cruise (t=1, extended)
+    wing geometry, propagating chord_multiplier into chord, area, AR, and
+    Re together -- this is the piece that was missing: extending chord
+    alone without also updating S_wing/AR/Re gives you two aero states
+    that don't correspond to the same physical wing.
+
+    Span is held fixed -- a telescoping TE extends chord, not span, so
+    the area increase comes entirely from chord growth and AR drops
+    accordingly.
+    """
+    def reynolds(chord):
+        return (const.air_density_cruise * const.cruise_speed_ms * chord
+                / const.dynamic_viscosity_cruise)
+
+    hover_S = wing_geo["S_wing"]
+    hover_MAC = wing_geo["MAC"]
+    cruise_MAC = hover_MAC * chord_multiplier
+    cruise_S = hover_S * chord_multiplier  # span fixed -> area scales with chord
+
+    rows = [
+        {
+            "state": "hover (t=0, retracted)",
+            "MAC_m": hover_MAC,
+            "root_chord_m": wing_geo["root_chord"],
+            "tip_chord_m": wing_geo["tip_chord"],
+            "S_wing_m2": hover_S,
+            "AR": wing_geo["wingspan"] ** 2 / hover_S,
+            "Re": reynolds(hover_MAC),
+        },
+        {
+            "state": "cruise (t=1, extended)",
+            "MAC_m": cruise_MAC,
+            "root_chord_m": wing_geo["root_chord"] * chord_multiplier,
+            "tip_chord_m": wing_geo["tip_chord"] * chord_multiplier,
+            "S_wing_m2": cruise_S,
+            "AR": wing_geo["wingspan"] ** 2 / cruise_S,
+            "Re": reynolds(cruise_MAC),
+        },
+    ]
+    df = pd.DataFrame(rows).set_index("state")
+    pct_change = (df.loc["cruise (t=1, extended)"] / df.loc["hover (t=0, retracted)"] - 1) * 100
+    df.loc["Δ (%)"] = pct_change
+    return df
