@@ -122,9 +122,9 @@ def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, fi
     </metrics>
 
     <mass_balance>
-        <ixx unit="KGM2"> {Ixx:.4f} </ixx>
-        <iyy unit="KGM2"> {Iyy:.4f} </iyy>
-        <izz unit="KGM2"> {Izz:.4f} </izz>
+        <ixx unit="KG*M2"> {Ixx:.4f} </ixx>
+        <iyy unit="KG*M2"> {Iyy:.4f} </iyy>
+        <izz unit="KG*M2"> {Izz:.4f} </izz>
         <emptywt unit="KG"> {mass_kg:.4f} </emptywt>
         <location name="CG" unit="M">
             <x> {cg_x:.4f} </x> <y> 0.0 </y> <z> 0.0 </z>
@@ -132,46 +132,30 @@ def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, fi
     </mass_balance>
 
     <aerodynamics>
-        <axis name="LIFT">
-            <function name="aero/force/Lift_alpha">
-                <product>
-                    <property>aero/qbar-area</property>
-                    <table>
-                        <independentVar lookup="row">aero/alpha-deg</independentVar>
-                        <tableData>
+        <axis name="WIND">
+            <function name="aero/coefficient/CL">
+                <table>
+                    <independentVar lookup="row">aero/alpha-deg</independentVar>
+                    <tableData>
 {table_cl}
-                        </tableData>
-                    </table>
-                </product>
+                    </tableData>
+                </table>
             </function>
-        </axis>
-
-        <axis name="DRAG">
-            <function name="aero/force/Drag_alpha">
-                <product>
-                    <property>aero/qbar-area</property>
-                    <table>
-                        <independentVar lookup="row">aero/alpha-deg</independentVar>
-                        <tableData>
+            <function name="aero/coefficient/CD">
+                <table>
+                    <independentVar lookup="row">aero/alpha-deg</independentVar>
+                    <tableData>
 {table_cd}
-                        </tableData>
-                    </table>
-                </product>
+                    </tableData>
+                </table>
             </function>
-        </axis>
-
-        <axis name="PITCH">
-            <function name="aero/moment/Pitch_alpha">
-                <product>
-                    <property>aero/qbar-area</property>
-                    <property>metrics/cbar-m</property>
-                    <table>
-                        <independentVar lookup="row">aero/alpha-deg</independentVar>
-                        <tableData>
+            <function name="aero/coefficient/Cm">
+                <table>
+                    <independentVar lookup="row">aero/alpha-deg</independentVar>
+                    <tableData>
 {table_cm}
-                        </tableData>
-                    </table>
-                </product>
+                    </tableData>
+                </table>
             </function>
         </axis>
     </aerodynamics>

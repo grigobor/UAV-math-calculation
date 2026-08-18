@@ -36,58 +36,42 @@
     </mass_balance>
 
     <aerodynamics>
-        <axis name="LIFT">
-            <function name="aero/force/Lift_alpha">
-                <product>
-                    <property>aero/qbar-area</property>
-                    <table>
-                        <independentVar lookup="row">aero/alpha-deg</independentVar>
-                        <tableData>
+        <axis name="WIND">
+            <function name="aero/coefficient/CL">
+                <table>
+                    <independentVar lookup="row">aero/alpha-deg</independentVar>
+                    <tableData>
        2.3 0.3000
        3.2 0.5000
        4.4 0.7000
        6.2 0.9000
        8.5 1.1000
-                        </tableData>
-                    </table>
-                </product>
+                    </tableData>
+                </table>
             </function>
-        </axis>
-
-        <axis name="DRAG">
-            <function name="aero/force/Drag_alpha">
-                <product>
-                    <property>aero/qbar-area</property>
-                    <table>
-                        <independentVar lookup="row">aero/alpha-deg</independentVar>
-                        <tableData>
+            <function name="aero/coefficient/CD">
+                <table>
+                    <independentVar lookup="row">aero/alpha-deg</independentVar>
+                    <tableData>
        2.3 0.0094
        3.2 0.0092
        4.4 0.0098
        6.2 0.0106
        8.5 0.0155
-                        </tableData>
-                    </table>
-                </product>
+                    </tableData>
+                </table>
             </function>
-        </axis>
-
-        <axis name="PITCH">
-            <function name="aero/moment/Pitch_alpha">
-                <product>
-                    <property>aero/qbar-area</property>
-                    <property>metrics/cbar-m</property>
-                    <table>
-                        <independentVar lookup="row">aero/alpha-deg</independentVar>
-                        <tableData>
+            <function name="aero/coefficient/Cm">
+                <table>
+                    <independentVar lookup="row">aero/alpha-deg</independentVar>
+                    <tableData>
        2.3 0.0147
        3.2 -0.0070
        4.4 -0.0200
        6.2 -0.0200
        8.5 -0.0112
-                        </tableData>
-                    </table>
-                </product>
+                    </tableData>
+                </table>
             </function>
         </axis>
     </aerodynamics>
