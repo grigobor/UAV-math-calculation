@@ -131,9 +131,9 @@ def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, fi
         </location>
     </mass_balance>
 
-    <aerodynamics>
+    <aerodynamics aero_ref_pt_hx="0.0546" aero_ref_pt_hy="0.0" aero_ref_pt_hz="0.0">
         <axis name="WIND">
-            <function name="aero/coefficient/CL">
+            <function name="CL">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
@@ -141,7 +141,7 @@ def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, fi
                     </tableData>
                 </table>
             </function>
-            <function name="aero/coefficient/CD">
+            <function name="CD">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
@@ -149,7 +149,7 @@ def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, fi
                     </tableData>
                 </table>
             </function>
-            <function name="aero/coefficient/Cm">
+            <function name="Cm">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>

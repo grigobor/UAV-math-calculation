@@ -26,18 +26,18 @@
     </metrics>
 
     <mass_balance>
-        <ixx unit="KGM2"> 1.7911 </ixx>
-        <iyy unit="KGM2"> 0.0294 </iyy>
-        <izz unit="KGM2"> 1.8205 </izz>
+        <ixx unit="KG*M2"> 1.7911 </ixx>
+        <iyy unit="KG*M2"> 0.0294 </iyy>
+        <izz unit="KG*M2"> 1.8205 </izz>
         <emptywt unit="KG"> 7.4036 </emptywt>
         <location name="CG" unit="M">
             <x> 0.0437 </x> <y> 0.0 </y> <z> 0.0 </z>
         </location>
     </mass_balance>
 
-    <aerodynamics>
+    <aerodynamics aero_ref_pt_hx="0.0546" aero_ref_pt_hy="0.0" aero_ref_pt_hz="0.0">
         <axis name="WIND">
-            <function name="aero/coefficient/CL">
+            <function name="CL">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
@@ -49,7 +49,7 @@
                     </tableData>
                 </table>
             </function>
-            <function name="aero/coefficient/CD">
+            <function name="CD">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
@@ -61,7 +61,7 @@
                     </tableData>
                 </table>
             </function>
-            <function name="aero/coefficient/Cm">
+            <function name="Cm">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
