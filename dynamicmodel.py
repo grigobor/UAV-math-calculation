@@ -39,7 +39,7 @@ def run_jsbsim():
         # Log properties of interest
         altitude.append(fdm['position/h-sl-ft'])
         pitch_angle.append(fdm['attitude/theta-deg'])
-        thrust_cmd.append(fdm['fcs/throttle-cmd-norm[0]'])
+        thrust_cmd.append(fdm['fcs/throttle-cmd-norm'])
         
         # Example: Inject control inputs or pilot commands over time
         if current_time < 2.0:
@@ -131,8 +131,20 @@ def generate_jsbsim_aircraft_xml(wing_geometry, stabilizer_geometry, mass_kg, fi
         </location>
     </mass_balance>
 
+    <ground_reactions>
+        <contact type="STRUCTURE" name="WING_TIPS">
+            <location unit="M">
+                <x>-0.2</x>
+                <y>0.0</y>
+                <z>0.0</z>
+            </location>
+            <static_friction_coefficient>0.8</static_friction_coefficient>
+            <dynamic_friction_coefficient>0.6</dynamic_friction_coefficient>
+        </contact>
+    </ground_reactions>
+
     <aerodynamics aero_ref_pt_hx="0.0546" aero_ref_pt_hy="0.0" aero_ref_pt_hz="0.0">
-        <axis name="WIND">
+        <axis name="LIFT">
             <function name="CL">
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
