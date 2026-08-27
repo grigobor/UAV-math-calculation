@@ -11,6 +11,41 @@ import aerosandbox.tools.pretty_plots as p
 
 import inputs
 
+def create_airfoil():
+    """
+    Runs both independent optimizations, builds and validates the morph
+    path between them, and returns results in a shape main.py can use.
+
+    Returns
+    -------
+    tuple:
+        cruise_airfoil, hover_airfoil,
+        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
+        hover_alpha, hover_CL, hover_CD, hover_CM,
+        morph_fn  -- call morph_fn(t) to get the airfoil at any morph
+                     state 0..1 (this is what buildinguav.py should call
+                     for the wing cross-sections at a given flight phase,
+                     instead of hardcoding the two endpoints).
+    """
+    cruise_airfoil, cruise_alpha, cruise_CL, cruise_CD, cruise_CM, cruise_airfoil_export = optimize_cruise_airfoil()
+    hover_airfoil, hover_alpha, hover_CL, hover_CD, hover_CM, hover_airfoil_export = optimize_hover_airfoil()
+
+    plot_comparison(cruise_airfoil, hover_airfoil)
+    airfoil_characteristics(cruise_airfoil, hover_airfoil)
+
+    validate_morph_path(hover_airfoil, cruise_airfoil, n=11)
+    plot_morph_sequence(hover_airfoil, cruise_airfoil, n=7)
+
+    def morph_fn(t):
+        return morph_airfoil(hover_airfoil, cruise_airfoil, t)
+
+    return (
+        cruise_airfoil, hover_airfoil,
+        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
+        hover_alpha, hover_CL, hover_CD, hover_CM, 
+        cruise_airfoil_export, hover_airfoil_export,
+        morph_fn
+    )
 
 # ---------------------------------------------------------------------------
 # HORIZONTAL / CRUISE AIRFOIL -- asymmetric, free trailing edge
@@ -120,12 +155,21 @@ def optimize_cruise_airfoil():
 
     sol = opti.solve()
 
+    cruise_airfoil_to_export = asb.KulfanAirfoil(
+        name="Asymmetric Cruise Airfoil",
+        upper_weights=sol.value(upper_weights),
+        lower_weights=sol.value(lower_weights),
+        leading_edge_weight=sol.value(cruise_airfoil.leading_edge_weight),
+        TE_thickness=0,
+    )
+
     return (
         sol.value(cruise_airfoil),
         sol.value(alpha),
         sol.value(aero["CL"]),
         sol.value(aero["CD"]),
         sol.value(aero["CM"]),
+        cruise_airfoil_to_export
     )
 
 
@@ -191,12 +235,21 @@ def optimize_hover_airfoil():
 
     sol = opti.solve()
 
+    hover_airfoil_to_export = asb.KulfanAirfoil(
+        name="Symmetric Hover Airfoil",
+        upper_weights=sol.value(hover_airfoil.upper_weights),
+        lower_weights=sol.value(hover_airfoil.lower_weights),
+        leading_edge_weight=sol.value(hover_airfoil.leading_edge_weight),
+        TE_thickness=sol.value(hover_airfoil.TE_thickness),
+    )
+
     return (
         sol.value(hover_airfoil),
         alphas_hover,
         sol.value(aero["CL"]),
         sol.value(aero["CD"]),
         sol.value(aero["CM"]),
+        hover_airfoil_to_export
     )
 
 
@@ -345,42 +398,6 @@ def plot_morph_sequence(hover_af, cruise_af, n=7):
     ax.legend(fontsize=10)
     plt.tight_layout()
     p.show_plot(title=None, legend=False)
-
-
-def create_airfoil():
-    """
-    Runs both independent optimizations, builds and validates the morph
-    path between them, and returns results in a shape main.py can use.
-
-    Returns
-    -------
-    tuple:
-        cruise_airfoil, hover_airfoil,
-        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
-        hover_alpha, hover_CL, hover_CD, hover_CM,
-        morph_fn  -- call morph_fn(t) to get the airfoil at any morph
-                     state 0..1 (this is what buildinguav.py should call
-                     for the wing cross-sections at a given flight phase,
-                     instead of hardcoding the two endpoints).
-    """
-    cruise_airfoil, cruise_alpha, cruise_CL, cruise_CD, cruise_CM = optimize_cruise_airfoil()
-    hover_airfoil, hover_alpha, hover_CL, hover_CD, hover_CM = optimize_hover_airfoil()
-
-    plot_comparison(cruise_airfoil, hover_airfoil)
-    airfoil_characteristics(cruise_airfoil, hover_airfoil)
-
-    validate_morph_path(hover_airfoil, cruise_airfoil, n=11)
-    plot_morph_sequence(hover_airfoil, cruise_airfoil, n=7)
-
-    def morph_fn(t):
-        return morph_airfoil(hover_airfoil, cruise_airfoil, t)
-
-    return (
-        cruise_airfoil, hover_airfoil,
-        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
-        hover_alpha, hover_CL, hover_CD, hover_CM,
-        morph_fn,
-    )
 
 
 def plot_comparison(af_asym, af_sym):
@@ -557,3 +574,137 @@ def compare_hover_cruise_geometry(wing_geo, const, chord_multiplier):
     pct_change = (df.loc["cruise (t=1, extended)"] / df.loc["hover (t=0, retracted)"] - 1) * 100
     df.loc["Δ (%)"] = pct_change
     return df
+
+def export_endpoint_airfoils(hover_airfoil, cruise_airfoil, 
+                               n_points_per_side=100, 
+                               out_dir=".", 
+                               formats=["dat", "csv"]):
+    """
+    Export the hover and cruise endpoint airfoils to files compatible with 
+    ANSYS Discovery, ANSYS Fluent, and other CFD tools.
+    
+    Supports multiple formats:
+    - 'dat': Selig format (.dat), traditional airfoil format, good for ANSYS
+    - 'csv': Comma-separated values, easy to import into spreadsheets/ANSYS
+    
+    Parameters
+    ----------
+    hover_airfoil : asb.KulfanAirfoil
+        The symmetric hover (VTOL) airfoil.
+    cruise_airfoil : asb.KulfanAirfoil
+        The asymmetric cruise (fixed-wing) airfoil.
+    n_points_per_side : int, optional
+        Number of points to discretize on upper and lower surfaces (default 100).
+        Higher values (150-200) are recommended for CFD mesh quality.
+    out_dir : str, optional
+        Output directory path (default current directory).
+    formats : list of str, optional
+        Export formats: ["dat", "csv"] or subset (default both).
+    
+    Returns
+    -------
+    dict
+        Dictionary mapping airfoil display names to nested dicts of file paths.
+        Example: {'Symmetric Hover Airfoil': {'dat': '...', 'csv': '...'}, ...}
+        
+    Examples
+    --------
+    >>> exported = export_endpoint_airfoils(hover_af, cruise_af, 
+    ...                                       out_dir="./airfoils",
+    ...                                       formats=["dat", "csv"])
+    >>> print(exported)
+    {'Symmetric Hover Airfoil': 
+        {'dat': './airfoils/hover_airfoil.dat', 
+         'csv': './airfoils/hover_airfoil.csv'},
+     'Asymmetric Cruise Airfoil': 
+        {'dat': './airfoils/cruise_airfoil.dat', 
+         'csv': './airfoils/cruise_airfoil.csv'}}
+    """
+    import os
+    
+    airfoils = {
+        "hover": (hover_airfoil, "Symmetric Hover Airfoil"),
+        "cruise": (cruise_airfoil, "Asymmetric Cruise Airfoil"),
+    }
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(out_dir, exist_ok=True)
+    
+    exported_files = {}
+    
+    for key, (airfoil, display_name) in airfoils.items():
+        # Discretize airfoil to x, y coordinates
+        discretized = airfoil.to_airfoil(n_coordinates_per_side=n_points_per_side)
+        coords = np.array(discretized.coordinates)  # shape: (n_points, 2)
+        x = coords[:, 0]
+        y = coords[:, 1]
+        
+        file_paths = {}
+        
+        # Export as Selig .dat format
+        if "dat" in formats:
+            dat_filename = os.path.join(out_dir, f"{key}_airfoil.dat")
+            with open(dat_filename, "w") as f:
+                # Selig format: first line is title, then x y pairs
+                f.write(f"{display_name}\n")
+                for xi, yi in zip(x, y):
+                    f.write(f"{xi:.6f} {yi:.6f}\n")
+            file_paths["dat"] = os.path.abspath(dat_filename)
+            print(f"✓ Exported {display_name} (Selig format)")
+            print(f"  → {os.path.abspath(dat_filename)}")
+        
+        # Export as CSV format (ANSYS-friendly)
+        if "csv" in formats:
+            csv_filename = os.path.join(out_dir, f"{key}_airfoil.csv")
+            # Create a DataFrame for easy CSV export
+            df_coords = pd.DataFrame({
+                "x": x,
+                "y": y,
+            })
+            df_coords.to_csv(csv_filename, index=False, float_format="%.6f")
+            file_paths["csv"] = os.path.abspath(csv_filename)
+            print(f"✓ Exported {display_name} (CSV format)")
+            print(f"  → {os.path.abspath(csv_filename)}")
+        
+        exported_files[display_name] = file_paths
+    
+    print(f"\n{'='*70}")
+    print(f"AIRFOIL EXPORT SUMMARY")
+    print(f"{'='*70}")
+    print(f"Airfoils exported: {len(exported_files)}")
+    print(f"Formats: {', '.join(formats)}")
+    print(f"Points per side: {n_points_per_side}")
+    print(f"Output directory: {os.path.abspath(out_dir)}")
+    print(f"{'='*70}\n")
+    
+    return exported_files
+ 
+ 
+def export_airfoils_for_ansys(hover_airfoil, cruise_airfoil, out_dir="."):
+    """
+    Convenience wrapper: export endpoint airfoils in ANSYS-optimized formats.
+    
+    Exports both .dat (Selig) and .csv formats for maximum compatibility
+    with ANSYS Discovery, Fluent, CFX, and other analysis tools.
+    
+    Parameters
+    ----------
+    hover_airfoil : asb.KulfanAirfoil
+        Symmetric hover (VTOL) airfoil.
+    cruise_airfoil : asb.KulfanAirfoil
+        Asymmetric cruise (fixed-wing) airfoil.
+    out_dir : str, optional
+        Output directory (default: current directory).
+    
+    Returns
+    -------
+    dict
+        Exported file paths for both airfoils in both formats.
+    """
+    return export_endpoint_airfoils(
+        hover_airfoil, 
+        cruise_airfoil,
+        n_points_per_side=150,  # Higher resolution for CFD mesh quality
+        out_dir=out_dir,
+        formats=["dat", "csv"]
+    )
