@@ -642,7 +642,7 @@ def export_endpoint_airfoils(hover_airfoil, cruise_airfoil,
         file_paths = {}
         
         # Export as Selig .dat format
-        if "dat" in formats:
+        """if "dat" in formats:
             dat_filename = os.path.join(out_dir, f"{key}_airfoil.dat")
             with open(dat_filename, "w") as f:
                 # Selig format: first line is title, then x y pairs
@@ -664,7 +664,19 @@ def export_endpoint_airfoils(hover_airfoil, cruise_airfoil,
             df_coords.to_csv(csv_filename, index=False, float_format="%.6f")
             file_paths["csv"] = os.path.abspath(csv_filename)
             print(f"✓ Exported {display_name} (CSV format)")
-            print(f"  → {os.path.abspath(csv_filename)}")
+            print(f"  → {os.path.abspath(csv_filename)}")"""
+
+        if "txt" in formats:
+            txt_filename = os.path.join(out_dir, f"{key}_airfoil.txt")
+            with open(txt_filename, "w") as f:
+                #f.write("3d=true\n")
+                f.write("polyline=false\n")
+                for x, y in zip(x, y):
+                    f.write(f"1\t{x:.6f}\t{y:.6f}\n")
+            file_paths["txt"] = os.path.abspath(txt_filename)
+            print(f"✓ Exported {display_name} (TXT format)")
+            print(f"  → {os.path.abspath(txt_filename)}")
+
         
         exported_files[display_name] = file_paths
     
@@ -706,5 +718,5 @@ def export_airfoils_for_ansys(hover_airfoil, cruise_airfoil, out_dir="."):
         cruise_airfoil,
         n_points_per_side=150,  # Higher resolution for CFD mesh quality
         out_dir=out_dir,
-        formats=["dat", "csv"]
+        formats=["txt"]
     )
