@@ -53,11 +53,11 @@
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
-       2.3 0.3000
-       3.2 0.5000
-       4.4 0.7000
-       6.2 0.9000
-       8.5 1.1000
+       2.4 0.5000
+       3.0 0.6000
+       3.8 0.7000
+       5.7 0.9000
+       7.5 1.1000
                     </tableData>
                 </table>
             </function>
@@ -65,11 +65,11 @@
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
-       2.3 0.0094
-       3.2 0.0092
-       4.4 0.0098
-       6.2 0.0106
-       8.5 0.0155
+       2.4 0.0086
+       3.0 0.0089
+       3.8 0.0091
+       5.7 0.0096
+       7.5 0.0106
                     </tableData>
                 </table>
             </function>
@@ -77,11 +77,11 @@
                 <table>
                     <independentVar lookup="row">aero/alpha-deg</independentVar>
                     <tableData>
-       2.3 0.0147
-       3.2 -0.0070
-       4.4 -0.0200
-       6.2 -0.0200
-       8.5 -0.0112
+       2.4 -0.0118
+       3.0 -0.0199
+       3.8 -0.0200
+       5.7 -0.0188
+       7.5 -0.0200
                     </tableData>
                 </table>
             </function>

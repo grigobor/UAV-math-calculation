@@ -61,24 +61,28 @@ def optimize_cruise_airfoil():
     """
     opti = asb.Opti()
 
-    CL_multipoint_targets = np.array([0.3, 0.5, 0.7, 0.9, 1.1])
-    CL_multipoint_weights = np.array([3, 4, 5, 6, 7])
+    CL_multipoint_targets = np.array([0.5, 0.6, 0.7, 0.9, 1.1])
+    CL_multipoint_weights = np.array([4, 5, 6, 7, 10])
 
     initial_airfoil = asb.KulfanAirfoil("naca0012")
 
     upper_weights = opti.variable(
         init_guess=initial_airfoil.upper_weights,
+        #lower_bound=-0.1,
+        #upper_bound=0.5
         lower_bound=-0.5,
         upper_bound=0.25
     )
     lower_weights = opti.variable(
         init_guess=initial_airfoil.lower_weights,
+        #lower_bound=-0.3,
+        #upper_bound=0.3
         lower_bound=-0.25,
         upper_bound=0.5
     )
 
     # Leading edge only -- keeps the nose round and well-posed.
-    opti.subject_to(upper_weights[0:2] == -lower_weights[0:2])
+    opti.subject_to(upper_weights[0] == -lower_weights[0])
     # (No trailing-edge equality constraint here -- this is the whole point:
     # the aft surface is now free to be asymmetric.)
 
@@ -91,7 +95,9 @@ def optimize_cruise_airfoil():
     )
 
     alpha = opti.variable(
-        init_guess=np.degrees(CL_multipoint_targets / (2 * np.pi)),
+        # The formula is based on the fundamental relationship for the potential flow around a thin airfoil.
+        # CL = 2*pi*alpha_(rad)
+        init_guess=np.degrees(CL_multipoint_targets / (2 * np.pi)), 
         lower_bound=-5,
         upper_bound=15,
     )
@@ -106,24 +112,9 @@ def optimize_cruise_airfoil():
     opti.subject_to(
         [
             aero["CL"] >= CL_multipoint_targets,
-            # Loosened from >= 0.015. That threshold was forcing a strongly
-            # reflexed trailing edge (needed for tailless pitch stability)
-            # which directly cancels the camber benefit you just freed up.
-            # -0.02 still keeps CM out of strongly-unstable territory but
-            # stops demanding a hard reflex from the 2D section -- pitch
-            # trim for the full aircraft should come mainly from wing
-            # washout (see the twist=3.5 / twist=1.5 split already in
-            # buildinguav.py) rather than every section reflexing itself
-            # back toward symmetric.
             aero["CM"] >= -0.02,
             cruise_airfoil.local_thickness(x_over_c=0.005) >= 0.01,
             cruise_airfoil.local_thickness(x_over_c=0.33) >= 0.05,
-            # New: thickness floor further aft than before (was only
-            # enforced at 90% chord, where 0.014 is thin enough that the
-            # solver was tapering the whole aft section down early). This
-            # keeps enough section depth at 60% chord for spar/servo/
-            # structure to actually fit, without constraining the shape
-            # forward of it.
             cruise_airfoil.local_thickness(x_over_c=0.60) >= 0.035,
             cruise_airfoil.local_thickness(x_over_c=0.90) >= 0.014,
             cruise_airfoil.local_thickness() <= 0.12,
@@ -177,18 +168,7 @@ def optimize_cruise_airfoil():
 # VERTICAL / HOVER AIRFOIL -- fully symmetric, independently optimized
 # ---------------------------------------------------------------------------
 def optimize_hover_airfoil():
-    """
-    Optimize a genuinely symmetric airfoil for the vertical/hover mode,
-    completely independently of the cruise shape (no derivation, no shared
-    weights). Symmetry is built in structurally (lower = -upper) rather
-    than imposed as a constraint, so it's exact and one less thing for the
-    solver to satisfy.
 
-    Objective: minimize drag across an angle-of-attack sweep relevant to
-    hover / transition, since a tailsitter's wing sits in prop wash at
-    varying incidence during that phase. CL == 0 at alpha == 0 falls out
-    automatically from the symmetry, so there's no need to target it.
-    """
     opti = asb.Opti()
 
     initial_airfoil = asb.KulfanAirfoil("naca0012")
