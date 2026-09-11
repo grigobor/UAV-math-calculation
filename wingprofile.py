@@ -113,11 +113,14 @@ def optimize_cruise_airfoil():
         [
             aero["CL"] >= CL_multipoint_targets,
             aero["CM"] >= -0.02,
-            cruise_airfoil.local_thickness(x_over_c=0.005) >= 0.01,
-            cruise_airfoil.local_thickness(x_over_c=0.33) >= 0.05,
-            cruise_airfoil.local_thickness(x_over_c=0.60) >= 0.035,
-            cruise_airfoil.local_thickness(x_over_c=0.90) >= 0.014,
-            cruise_airfoil.local_thickness() <= 0.12,
+            cruise_airfoil.max_thickness() >= 0.11,
+            cruise_airfoil.max_thickness() <= 0.13,
+            cruise_airfoil.local_thickness(x_over_c=0.005) >= 0.010,
+            cruise_airfoil.local_thickness(x_over_c=0.25) >= 0.10,
+            cruise_airfoil.local_thickness(x_over_c=0.5) >= 0.08,
+            cruise_airfoil.local_thickness(x_over_c=0.75) >= 0.03,
+            cruise_airfoil.local_thickness(x_over_c=0.90) >= 0.012,
+            #cruise_airfoil.local_thickness() <= 0.12,
             cruise_airfoil.local_thickness() > 0,
         ]
     )
