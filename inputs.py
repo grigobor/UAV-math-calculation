@@ -28,7 +28,7 @@ class DesignConstants:
     air_density_sea_level = 1.225 # air density on takeoff (sea level)
     takeoff_altitude = 0 # Take off altitude, m
     cruise_altitude = 3000 # Cruise altitude, m
-    max_lift_coefficient_stat = 1.4 # maximum wing lift coefficient (statistically)
+    max_lift_coefficient_stat = 1.2 # maximum wing lift coefficient (statistically)
     min_lift_coefficient_stat = -0.8 # minimum wing lift coefficient (from the aerofoil polar)
     derivative_max_lift_coefficient_stat = 5.25 # derivative of max lift coefficient (by statistic)
     WP = 0.1 # energy armament (by prototype)
@@ -53,7 +53,8 @@ class DesignConstants:
     Kp = 0.0995
 
     # 
-    Re_cruise = 511979
+    # Re_cruise = 511979
+    Re_cruise = 450000
     SwetS = 2 # According to the table from the sources
     AR = 8 # Aspect ratio (Presumably, need to correct or use Aerosandbox optimization)
     air_density_cruise = 1.1117

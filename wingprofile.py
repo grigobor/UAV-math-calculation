@@ -12,21 +12,7 @@ import aerosandbox.tools.pretty_plots as p
 import inputs
 
 def create_airfoil():
-    """
-    Runs both independent optimizations, builds and validates the morph
-    path between them, and returns results in a shape main.py can use.
 
-    Returns
-    -------
-    tuple:
-        cruise_airfoil, hover_airfoil,
-        cruise_alpha, cruise_CL, cruise_CD, cruise_CM,
-        hover_alpha, hover_CL, hover_CD, hover_CM,
-        morph_fn  -- call morph_fn(t) to get the airfoil at any morph
-                     state 0..1 (this is what buildinguav.py should call
-                     for the wing cross-sections at a given flight phase,
-                     instead of hardcoding the two endpoints).
-    """
     cruise_airfoil, cruise_alpha, cruise_CL, cruise_CD, cruise_CM, cruise_airfoil_export = optimize_cruise_airfoil()
     hover_airfoil, hover_alpha, hover_CL, hover_CD, hover_CM, hover_airfoil_export = optimize_hover_airfoil()
 
@@ -47,18 +33,8 @@ def create_airfoil():
         morph_fn
     )
 
-# ---------------------------------------------------------------------------
-# HORIZONTAL / CRUISE AIRFOIL -- asymmetric, free trailing edge
-# ---------------------------------------------------------------------------
 def optimize_cruise_airfoil():
-    """
-    Optimize a cambered airfoil for cruise. Only the leading edge is
-    constrained (upper = -lower at the first two CST stations, to keep a
-    round, well-posed nose). The trailing-edge CST weight is left free on
-    both surfaces, so the aft camber -- where camber has the most leverage
-    on CL and CM -- can actually develop, instead of being forced back to
-    a symmetric shape.
-    """
+
     opti = asb.Opti()
 
     CL_multipoint_targets = np.array([0.5, 0.6, 0.7, 0.9, 1.1])
@@ -135,12 +111,6 @@ def optimize_cruise_airfoil():
         get_wiggliness(cruise_airfoil) < 2 * get_wiggliness(initial_airfoil),
     )
 
-    # Small alpha penalty: CL targets are still hard constraints, so this
-    # doesn't stop the airfoil from meeting them -- it just removes the
-    # solver's incentive to satisfy CL cheaply via angle-of-attack instead
-    # of camber once camber is no longer penalized by the reflex
-    # requirement above. Weight is small on purpose: large enough to break
-    # the "just pitch up" tie, small enough not to fight the CD objective.
     alpha_penalty_weight = 0.002
     opti.minimize(
         np.mean(aero["CD"] * CL_multipoint_weights)
@@ -167,9 +137,6 @@ def optimize_cruise_airfoil():
     )
 
 
-# ---------------------------------------------------------------------------
-# VERTICAL / HOVER AIRFOIL -- fully symmetric, independently optimized
-# ---------------------------------------------------------------------------
 def optimize_hover_airfoil():
 
     opti = asb.Opti()
@@ -235,44 +202,9 @@ def optimize_hover_airfoil():
         hover_airfoil_to_export
     )
 
-
-
-# ---------------------------------------------------------------------------
-# THE ADAPTIVE AIRFOIL: one physical shape, morphing between the two optima
-# ---------------------------------------------------------------------------
 def morph_airfoil(hover_af, cruise_af, t, name=None):
-    """
-    Return the airfoil at morph state `t`, by linearly interpolating the
-    Kulfan (CST) weights between the hover shape (t=0) and the cruise
-    shape (t=1).
 
-    This works because both airfoils are expressed on the *same* CST
-    basis (same number of weights, same Bernstein order) -- they were
-    both initialized from the same naca0012 KulfanAirfoil, so the weight
-    vectors line up one-to-one. Interpolating coefficients on a shared
-    polynomial basis is what actually gives you a continuous, physically
-    realizable family of shapes -- this is the standard way morphing/CST
-    airfoils are represented in the literature (e.g. compliant/morphing
-    skin structures whose surface follows a blended CST shape as an
-    actuator moves it from one designed state to another).
-
-    Parameters
-    ----------
-    hover_af, cruise_af : asb.KulfanAirfoil
-        The two independently-optimized endpoint shapes.
-    t : float or array-like, 0 to 1
-        Morph state. 0 = hover (symmetric), 1 = cruise (asymmetric).
-        Values outside [0, 1] are allowed if you want to check
-        overshoot/extrapolation, but aren't physically meaningful.
-
-    Returns
-    -------
-    asb.KulfanAirfoil
-    """
     assert len(hover_af.upper_weights) == len(cruise_af.upper_weights), (
-        "Hover and cruise airfoils must share the same CST order to morph "
-        "between them -- make sure both are still initialized from the "
-        "same base KulfanAirfoil."
     )
 
     upper = (1 - t) * hover_af.upper_weights + t * cruise_af.upper_weights
@@ -298,17 +230,6 @@ def sample_morph_sequence(hover_af, cruise_af, n=11):
 def validate_morph_path(hover_af, cruise_af, n=11,
                          Re=None, mach=None, alpha_check=0.0,
                          min_thickness=0.005):
-    """
-    Sanity-check the morph path before you commit to building it: since
-    the two endpoints were optimized *independently*, nothing guarantees
-    the shapes in between stay well-behaved (thin sections pinching to
-    zero thickness, self-intersecting surfaces, or a CD/CL that spikes
-    partway through the morph instead of varying smoothly). This sweeps
-    t and reports thickness and aero at each state so you can catch a bad
-    intermediate shape before it's a physical part.
-
-    Returns a pandas DataFrame with one row per t.
-    """
     if Re is None:
         Re = inputs.DesignConstants.Re_cruise
     if mach is None:
@@ -341,11 +262,6 @@ def validate_morph_path(hover_af, cruise_af, n=11,
 
 def export_morph_sequence(hover_af, cruise_af, n=11, n_points_per_side=100,
                            out_dir="."):
-    """
-    Write a .dat coordinate file (Selig format, same style as
-    my_custom_airfoil.dat) for each morph state -- one per manufactured
-    /interpolated cross-section, for CAD or CFD use.
-    """
     import os
     airfoils, ts = sample_morph_sequence(hover_af, cruise_af, n=n)
     paths = []
@@ -362,8 +278,7 @@ def export_morph_sequence(hover_af, cruise_af, n=11, n_points_per_side=100,
 
 
 def plot_morph_sequence(hover_af, cruise_af, n=7):
-    """Overlay the morph sequence to visually confirm a smooth, non-self-
-    intersecting transformation from hover to cruise shape."""
+
     airfoils, ts = sample_morph_sequence(hover_af, cruise_af, n=n)
 
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -485,15 +400,7 @@ def airfoil_characteristics(af_asym, af_sym):
     p.show_plot(title=None, legend=False)
 
 def extend_trailing_edge(base_chord, extension_fraction):
-    """
-    Physical chord after a Fowler-style telescoping TE extension.
 
-    The Kulfan/CST weights (normalized x/c shape) don't change -- a
-    telescoping TE slides the aft structure aft without reshaping the
-    section. Only the physical chord grows. Everything downstream
-    (chord, wing area, Re) must be scaled by the same chord_multiplier
-    to stay geometrically consistent between the two states.
-    """
     chord_multiplier = 1.0 + extension_fraction
     return {
         "chord_multiplier": chord_multiplier,
@@ -502,9 +409,7 @@ def extend_trailing_edge(base_chord, extension_fraction):
 
 
 def find_extension_for_target(base_chord, target_chord):
-    """Inverse of extend_trailing_edge: solve extension_fraction/chord_multiplier
-    needed to reach a target chord (e.g. from a required cruise CL or a
-    structural constraint)."""
+
     chord_multiplier = target_chord / base_chord
     return {
         "chord_multiplier": chord_multiplier,
@@ -513,17 +418,7 @@ def find_extension_for_target(base_chord, target_chord):
 
 
 def compare_hover_cruise_geometry(wing_geo, const, chord_multiplier):
-    """
-    Side-by-side table of hover (t=0, retracted) vs cruise (t=1, extended)
-    wing geometry, propagating chord_multiplier into chord, area, AR, and
-    Re together -- this is the piece that was missing: extending chord
-    alone without also updating S_wing/AR/Re gives you two aero states
-    that don't correspond to the same physical wing.
 
-    Span is held fixed -- a telescoping TE extends chord, not span, so
-    the area increase comes entirely from chord growth and AR drops
-    accordingly.
-    """
     def reynolds(chord):
         return (const.air_density_cruise * const.cruise_speed_ms * chord
                 / const.dynamic_viscosity_cruise)
@@ -562,47 +457,6 @@ def export_endpoint_airfoils(hover_airfoil, cruise_airfoil,
                                n_points_per_side=100, 
                                out_dir=".", 
                                formats=["dat", "csv"]):
-    """
-    Export the hover and cruise endpoint airfoils to files compatible with 
-    ANSYS Discovery, ANSYS Fluent, and other CFD tools.
-    
-    Supports multiple formats:
-    - 'dat': Selig format (.dat), traditional airfoil format, good for ANSYS
-    - 'csv': Comma-separated values, easy to import into spreadsheets/ANSYS
-    
-    Parameters
-    ----------
-    hover_airfoil : asb.KulfanAirfoil
-        The symmetric hover (VTOL) airfoil.
-    cruise_airfoil : asb.KulfanAirfoil
-        The asymmetric cruise (fixed-wing) airfoil.
-    n_points_per_side : int, optional
-        Number of points to discretize on upper and lower surfaces (default 100).
-        Higher values (150-200) are recommended for CFD mesh quality.
-    out_dir : str, optional
-        Output directory path (default current directory).
-    formats : list of str, optional
-        Export formats: ["dat", "csv"] or subset (default both).
-    
-    Returns
-    -------
-    dict
-        Dictionary mapping airfoil display names to nested dicts of file paths.
-        Example: {'Symmetric Hover Airfoil': {'dat': '...', 'csv': '...'}, ...}
-        
-    Examples
-    --------
-    >>> exported = export_endpoint_airfoils(hover_af, cruise_af, 
-    ...                                       out_dir="./airfoils",
-    ...                                       formats=["dat", "csv"])
-    >>> print(exported)
-    {'Symmetric Hover Airfoil': 
-        {'dat': './airfoils/hover_airfoil.dat', 
-         'csv': './airfoils/hover_airfoil.csv'},
-     'Asymmetric Cruise Airfoil': 
-        {'dat': './airfoils/cruise_airfoil.dat', 
-         'csv': './airfoils/cruise_airfoil.csv'}}
-    """
     import os
     
     airfoils = {
@@ -676,26 +530,6 @@ def export_endpoint_airfoils(hover_airfoil, cruise_airfoil,
  
  
 def export_airfoils_for_ansys(hover_airfoil, cruise_airfoil, out_dir="."):
-    """
-    Convenience wrapper: export endpoint airfoils in ANSYS-optimized formats.
-    
-    Exports both .dat (Selig) and .csv formats for maximum compatibility
-    with ANSYS Discovery, Fluent, CFX, and other analysis tools.
-    
-    Parameters
-    ----------
-    hover_airfoil : asb.KulfanAirfoil
-        Symmetric hover (VTOL) airfoil.
-    cruise_airfoil : asb.KulfanAirfoil
-        Asymmetric cruise (fixed-wing) airfoil.
-    out_dir : str, optional
-        Output directory (default: current directory).
-    
-    Returns
-    -------
-    dict
-        Exported file paths for both airfoils in both formats.
-    """
     return export_endpoint_airfoils(
         hover_airfoil, 
         cruise_airfoil,
