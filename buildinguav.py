@@ -9,7 +9,8 @@ def build_airplane_model(const, wing_geo, vstab_geo, profile_1, profile_2):
         xyz_ref=[wing_geo['root_chord'] * 0.25, 0, 0],
         s_ref=wing_geo['S_wing'],
         c_ref=wing_geo['MAC'],
-        b_ref=const.AR,
+        b_ref=wing_geo['wingspan'],
+        #b_ref=const.AR,
         wings=[
             # Main Wing
             asb.Wing(
@@ -19,28 +20,32 @@ def build_airplane_model(const, wing_geo, vstab_geo, profile_1, profile_2):
                     asb.WingXSec(
                         xyz_le=[0, 0, 0],
                         chord=wing_geo['root_chord'],
-                        twist=3.5,
-                        airfoil=profile_2.to_airfoil(),
+                        twist=2.5,
+                        #twist=3.5,
+                        airfoil=profile_1.to_airfoil(),
                     ),
                     asb.WingXSec(
                         # Using a complex formula to keep the wing trapezoidal regardless of the offset "b"
                         xyz_le=[wing_geo['root_chord'] - (wing_geo['tip_chord'] + (((wing_geo['wingspan']/2) - b) / (wing_geo['wingspan']/2)) * (wing_geo['root_chord'] - wing_geo['tip_chord'])), b, 0],
                         chord=wing_geo['tip_chord'] + (((wing_geo['wingspan']/2) - b) / (wing_geo['wingspan']/2)) * (wing_geo['root_chord'] - wing_geo['tip_chord']),
-                        twist=3.5,
+                        twist=2.5,
+                        #twist=3.5,
                         airfoil=profile_1.to_airfoil(),
                     ),
                     asb.WingXSec(
                         # Using a complex formula to keep the wing trapezoidal regardless of the offset "a"
                         xyz_le=[wing_geo['root_chord'] - (wing_geo['tip_chord'] + (a / (wing_geo['wingspan']/2)) * (wing_geo['root_chord'] - wing_geo['tip_chord'])), wing_geo['wingspan']/2 - a, 0],
                         chord=wing_geo['tip_chord'] + (a / (wing_geo['wingspan']/2)) * (wing_geo['root_chord'] - wing_geo['tip_chord']),
-                        twist=1.5,
+                        twist=1,
+                        #twist=1.5,
                         airfoil=profile_1.to_airfoil(),
                     ),
                     asb.WingXSec(
                         xyz_le=[wing_geo['root_chord'] - wing_geo['tip_chord'], wing_geo['wingspan']/2, 0],
                         chord=wing_geo['tip_chord'],
-                        twist=1.5,
-                        airfoil=profile_2.to_airfoil(),
+                        twist=1,
+                        #twist=1.5,
+                        airfoil=profile_1.to_airfoil(),
                     ),
                 ],
             ),
@@ -117,6 +122,26 @@ def build_airplane_model(const, wing_geo, vstab_geo, profile_1, profile_2):
                     asb.FuselageXSec(xyz_c=[0.2, 0, 0], width=0.17, height=0.12),
                     asb.FuselageXSec(xyz_c=[0.3, 0, 0], width=0.1, height=0.05),
                 ],
+            ),
+            asb.Fuselage(
+                name="Engine 1",
+                xsecs=[
+                    # For future. Create little offset for first point if mesh will degenerate
+                    asb.FuselageXSec(xyz_c=[0.002, wing_geo['wingspan']/4, 0], width = 0, height= 0),
+                    asb.FuselageXSec(xyz_c=[0.002, wing_geo['wingspan']/4, 0], width = 0.0556, height= 0.0556),
+                    asb.FuselageXSec(xyz_c=[0.07, wing_geo['wingspan']/4, 0], width = 0.0556, height= 0.0556),
+                    asb.FuselageXSec(xyz_c=[0.14, wing_geo['wingspan']/4, 0], width = 0, height= 0),
+                ]
+            ),
+            asb.Fuselage(
+                name="Engine 2",
+                xsecs=[
+                    # For future. Create little offset for first point if mesh will degenerate
+                    asb.FuselageXSec(xyz_c=[0.002, -wing_geo['wingspan']/4, 0], width = 0, height= 0),
+                    asb.FuselageXSec(xyz_c=[0.002, -wing_geo['wingspan']/4, 0], width = 0.0556, height= 0.0556),
+                    asb.FuselageXSec(xyz_c=[0.07, -wing_geo['wingspan']/4, 0], width = 0.0556, height= 0.0556),
+                    asb.FuselageXSec(xyz_c=[0.14, -wing_geo['wingspan']/4, 0], width = 0, height= 0),
+                ]
             )
         ],
     )
