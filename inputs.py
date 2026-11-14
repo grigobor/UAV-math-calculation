@@ -27,7 +27,7 @@ class DesignConstants:
     stall_speed = 55 # stall speed (kph)
     air_density_sea_level = 1.225 # air density on takeoff (sea level)
     takeoff_altitude = 0 # Take off altitude, m
-    cruise_altitude = 3000 # Cruise altitude, m
+    cruise_altitude = 1000 # Cruise altitude, m
     max_lift_coefficient_stat = 1.2 # maximum wing lift coefficient (statistically)
     min_lift_coefficient_stat = -0.8 # minimum wing lift coefficient (from the aerofoil polar)
     derivative_max_lift_coefficient_stat = 5.25 # derivative of max lift coefficient (by statistic)

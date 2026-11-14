@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 import aerosandbox as asb
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def _run(airplane, atmosphere, velocity, alpha, beta):
     """One vectorized AeroBuildup call. alpha/beta in degrees, any broadcastable shapes."""
     alpha, beta = np.broadcast_arrays(np.asarray(alpha, dtype=float),
@@ -22,11 +19,12 @@ def _run(airplane, atmosphere, velocity, alpha, beta):
 
 
 def _prepare_airplane(airplane, xyz_cg=None):
-    """Copy the airplane, optionally move the moment reference to the CG, check b_ref."""
+    #I don't even know why we copy aircraft first:)
     airplane = copy.deepcopy(airplane)
     if xyz_cg is not None:
         airplane.xyz_ref = list(xyz_cg)
 
+    #Checking wing span in wing_geo and span specified in aircraft creating (buidinguav.py)
     span = float(airplane.wings[0].span())
     if abs(airplane.b_ref - span) / span > 0.05:
         print(f"WARNING: b_ref = {airplane.b_ref:.3f} m but the main wing span is {span:.3f} m. "
@@ -66,9 +64,6 @@ def _slope_per_rad(x_deg, y, mask):
     return float(np.polyfit(x_deg[mask], y[mask], 1)[0] * 180.0 / np.pi)
 
 
-# ---------------------------------------------------------------------------
-# Main analysis
-# ---------------------------------------------------------------------------
 def run_aerobuildup_analysis(
     airplane,
     Re=450_000,
@@ -155,9 +150,6 @@ def run_aerobuildup_analysis(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Printing
-# ---------------------------------------------------------------------------
 def print_aero_summary(res):
     print(f"\n{'=' * 60}")
     print("AEROBUILDUP SUMMARY (whole aircraft)")
@@ -184,9 +176,6 @@ def print_aero_summary(res):
     print(f"{'=' * 60}\n")
 
 
-# ---------------------------------------------------------------------------
-# Plots
-# ---------------------------------------------------------------------------
 def plot_aero_results(res, save_dir=None):
     a = res["alpha"]
     at = res["alpha_trim"]
@@ -273,9 +262,6 @@ def plot_aero_results(res, save_dir=None):
     plt.show()
 
 
-# ---------------------------------------------------------------------------
-# Full alpha-beta maps (as in the AeroSandbox AeroBuildup tutorial)
-# ---------------------------------------------------------------------------
 def run_alpha_beta_map(
     airplane,
     Re=450_000,
