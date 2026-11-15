@@ -14,7 +14,7 @@ import inputs
 def create_airfoil():
 
     cruise_airfoil, cruise_alpha, cruise_CL, cruise_CD, cruise_CM, cruise_airfoil_export = optimize_cruise_airfoil()
-    hover_airfoil, hover_alpha, hover_CL, hover_CD, hover_CM, hover_airfoil_export = optimize_hover_airfoil()
+    hover_airfoil, hover_alpha, hover_CL, hover_CD, hover_CM, hover_airfoil_export = optimize_hover_airfoil(cruise_airfoil)
 
     plot_comparison(cruise_airfoil, hover_airfoil)
     airfoil_characteristics(cruise_airfoil, hover_airfoil)
@@ -137,23 +137,36 @@ def optimize_cruise_airfoil():
     )
 
 
-def optimize_hover_airfoil():
+def optimize_hover_airfoil(cruise_airfoil, max_abs_CL0=0.05, max_abs_CM0=0.03, drag_weight=1):
 
     opti = asb.Opti()
 
+    cu = np.array(cruise_airfoil.upper_weights)
+    cl = np.array(cruise_airfoil.lower_weights)
+    c_le = float(cruise_airfoil.leading_edge_weight)
+
+    sym = 0.5 * (cu - cl)
+
+    upper_weights = opti.variable(init_guess=sym, lower_bound=-0.5, upper_bound=0.25)
+    lower_weights = opti.variable(init_guess=-sym, lower_bound=-0.25, upper_bound=0.5)
+    le_weights = opti.variable(init_guess=0, lower_bound=-0.05, upper_bound= 0.05)
+
+    opti.subject_to(upper_weights[0:2] == -lower_weights[0:2])
+
+    """
     initial_airfoil = asb.KulfanAirfoil("naca0012")
 
     weights = opti.variable(
         init_guess=initial_airfoil.upper_weights,
         lower_bound=-0.5,
         upper_bound=0.5,
-    )
+    )"""
 
     hover_airfoil = asb.KulfanAirfoil(
-        name="Symmetric Hover Airfoil",
-        upper_weights=weights,
-        lower_weights=-weights,
-        leading_edge_weight=0,
+        name="Hover Airfoil",
+        upper_weights=upper_weights,
+        lower_weights=lower_weights,
+        leading_edge_weight=le_weights,
         TE_thickness=0,
     )
 
@@ -168,30 +181,53 @@ def optimize_hover_airfoil():
 
     opti.subject_to(
         [
+            aero["CL"][0] <= max_abs_CL0,
+            aero["CL"][0] >= -max_abs_CL0,
+            aero["CM"][0] <= max_abs_CM0,
+            aero["CM"][0] >= -max_abs_CM0,
             hover_airfoil.local_thickness(x_over_c=0.005) >= 0.01,
             hover_airfoil.local_thickness(x_over_c=0.33) >= 0.05,
+            hover_airfoil.local_thickness(x_over_c=0.60) >= 0.035,
             hover_airfoil.local_thickness(x_over_c=0.90) >= 0.014,
             hover_airfoil.local_thickness() <= 0.12,
             hover_airfoil.local_thickness() > 0,
         ]
     )
-
+    """
     get_wiggliness = lambda af: np.sum(np.diff(np.diff(af.upper_weights)) ** 2)
     opti.subject_to(
         get_wiggliness(hover_airfoil) < 2 * get_wiggliness(initial_airfoil),
     )
-
     opti.minimize(np.mean(aero["CD"]))
+    """
+
+    get_wiggliness = lambda af: sum(
+        [np.sum(np.diff(np.diff(a)) ** 2) for a in [af.lower_weights, af.upper_weights]]
+    )
+    opti.subject_to(
+        get_wiggliness(hover_airfoil) < 2 * get_wiggliness(asb.KulfanAirfoil("naca0012")),
+    )
+
+    morph_distance = (
+        np.sum((upper_weights - cu) ** 2)
+        + np.sum((lower_weights - cl) ** 2)
+        + (le_weights - c_le) ** 2
+    )
+    opti.minimize(morph_distance + drag_weight * np.mean(aero["CD"]))
 
     sol = opti.solve()
 
     hover_airfoil_to_export = asb.KulfanAirfoil(
-        name="Symmetric Hover Airfoil",
-        upper_weights=sol.value(hover_airfoil.upper_weights),
-        lower_weights=sol.value(hover_airfoil.lower_weights),
-        leading_edge_weight=sol.value(hover_airfoil.leading_edge_weight),
-        TE_thickness=sol.value(hover_airfoil.TE_thickness),
+        name="Hover Airfoil",
+        upper_weights=sol.value(upper_weights),
+        lower_weights=sol.value(lower_weights),
+        leading_edge_weight=sol.value(le_weights),
+        TE_thickness=0,
     )
+
+    print(f"Hover airfoil: CL(α=0) = {sol.value(aero['CL'])[0]:.4f}, "
+          f"CM(α=0) = {sol.value(aero['CM'])[0]:.4f}, "
+          f"morph distance = {sol.value(morph_distance):.4f}")
 
     return (
         sol.value(hover_airfoil),
