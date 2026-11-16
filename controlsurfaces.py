@@ -9,9 +9,13 @@ passes every requirement.
 
 Public entry points
 -------------------
-size_control_surfaces(const, wing_geo, m0_final, aero_params, ...) -> dict
+size_control_surfaces(wing_geo, m0_final, aero_params, ...) -> dict
 print_control_summary(result)
-size_rudder(const, wing_geo, vstab_geo, ...)                       -> dict
+size_rudder(wing_geo, vstab_geo, ...)                       -> dict
+
+Design constants are read from inputs.DesignConstants (a class used as a
+namespace, as in the rest of the project). Pass const=<other class or object>
+to override it.
 asb_control_derivatives(airplane, op_point, ...)   (optional cross-check)
 
 Conventions: angles in radians internally, results also given in degrees.
@@ -20,6 +24,13 @@ in buildinguav.py. y is measured from the centre line, 0 <= y <= b/2.
 """
 import numpy as np
 import pandas as pd
+
+import inputs
+
+
+def _get_const(const=None):
+    """Return the constants namespace: the given one, or inputs.DesignConstants."""
+    return const if const is not None else inputs.DesignConstants
 
 
 # ---------------------------------------------------------------------------
@@ -112,10 +123,10 @@ def roll_rate(C_ldelta, C_lp, delta_a, V, b):
 # ---------------------------------------------------------------------------
 # Hover / transition: prop-wash control
 # ---------------------------------------------------------------------------
-def hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
+def hover_control(wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
                   slipstream_eff=0.8, l_e=0.1, thrust_ratio=1.0,
                   I_pitch=None, I_axial=None, delta_max=np.radians(25.0),
-                  fuselage_length=0.71):
+                  fuselage_length=0.71, const=None):
     """Moments available from elevons immersed in the prop slipstream.
 
     Pitch  : symmetric deflection, arm l_e (CG to elevon centroid).
@@ -126,6 +137,7 @@ def hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
     I_pitch, I_axial default to uniform-rod estimates; replace them with
     real inertias from CAD as soon as you have them.
     """
+    const = _get_const(const)
     g = const.g
     rho = const.air_density_sea_level
     W = m0_final * g
@@ -173,7 +185,7 @@ def hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
 # ---------------------------------------------------------------------------
 # Elevon sizing driver
 # ---------------------------------------------------------------------------
-def size_control_surfaces(const, wing_geo, m0_final, aero_params,
+def size_control_surfaces(wing_geo, m0_final, aero_params,
                           delta_max_deg=25.0,
                           roll_rate_req_dps=60.0,
                           cm_trim=-0.02,
@@ -186,7 +198,7 @@ def size_control_surfaces(const, wing_geo, m0_final, aero_params,
                           cf_c_grid=(0.20, 0.25, 0.30, 0.35),
                           y_inner_frac_grid=(0.50, 0.40, 0.30, 0.20, 0.10),
                           eta=0.9, V_roll=None,
-                          I_pitch=None, I_axial=None):
+                          I_pitch=None, I_axial=None, const=None):
     """Find the smallest elevon meeting the requirements.
 
     Requirements checked for every candidate
@@ -200,6 +212,7 @@ def size_control_surfaces(const, wing_geo, m0_final, aero_params,
     cm_trim is the pitching moment about the CG the elevons must cancel
     (e.g. wing Cm0 from the airfoil, about -0.02 from wingprofile.py).
     """
+    const = _get_const(const)
     b = wing_geo["wingspan"]
     MAC = wing_geo["MAC"]
     delta_max = np.radians(delta_max_deg)
@@ -229,7 +242,7 @@ def size_control_surfaces(const, wing_geo, m0_final, aero_params,
             delta_a = delta_max - abs(delta_trim)
             p = roll_rate(d["C_ldelta"], d["C_lp"], max(delta_a, 0.0), V, b)
 
-            h = hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y,
+            h = hover_control(wing_geo, m0_final, cf_c, y1, y2, prop_y, const=const,
                               eta=eta, l_e=l_e, I_pitch=I_pitch,
                               I_axial=I_axial, delta_max=delta_max)
 
@@ -306,13 +319,14 @@ def print_control_summary(result):
 # ---------------------------------------------------------------------------
 # Rudder on the fins
 # ---------------------------------------------------------------------------
-def size_rudder(const, wing_geo, vstab_geo, cr_c=0.30, eta=0.9,
-                CL_alpha_v=None, delta_max_deg=25.0, l_v=None):
+def size_rudder(wing_geo, vstab_geo, cr_c=0.30, eta=0.9,
+                CL_alpha_v=None, delta_max_deg=25.0, l_v=None, const=None):
     """Rudder yaw power C_n_delta_r for a given rudder chord ratio.
 
     vstab_geo is the dict from calculate_vertical_stabilizer().
     Rudder spans the full fin; S_r/S_v = cr_c.
     """
+    const = _get_const(const)
     S, b = wing_geo["S_wing"], wing_geo["wingspan"]
     S_v = vstab_geo["total_area"]
     l_v = l_v if l_v is not None else vstab_geo["arm"]
