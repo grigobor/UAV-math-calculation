@@ -5,6 +5,7 @@ def build_airplane_model(const, wing_geo, vstab_geo, profile_1, profile_2, contr
     """Build and return Aerosandbox airplane model."""
     a = 0.05 # Wingtip offset (m)
     b = 0.15 # Wingroot offset (m)
+    rudder_chord_ratio=controls.get('rudder_chord_ratio') if controls else None
     airplane = asb.Airplane(
         name="Hybrid VTOL Fixed-Wing UAV",
         xyz_ref=[wing_geo['root_chord'] * 0.25, 0, 0],
@@ -23,58 +24,34 @@ def build_airplane_model(const, wing_geo, vstab_geo, profile_1, profile_2, contr
             asb.Wing(
                 name="Central Fin Up",
                 symmetric=False,
-                xsecs=[
-                    asb.WingXSec(
-                        xyz_le=[0.17, 0, 0],
-                        chord=const.central_root_chord * vstab_geo['scale_central'],
-                        twist=0,
-                        airfoil=asb.Airfoil("naca0012"),
+                xsecs=_fin_cross_section_xsecs(
+                    [0.17, 0, 0],
+                    const.central_root_chord * vstab_geo['scale_central'],
+                    [0.17 + 0.05, 0, const.central_span * vstab_geo['scale_central']],
+                    const.central_tip_chord * vstab_geo['scale_central'],
+                    "rudder_central", rudder_chord_ratio),
                     ),
-                    asb.WingXSec(
-                        xyz_le=[0.17 + 0.05, 0, const.central_span * vstab_geo['scale_central']],
-                        chord=const.central_tip_chord * vstab_geo['scale_central'],
-                        twist=0,
-                        airfoil=asb.Airfoil("naca0012"),
-                    ),
-                ],
-            ),
             # Left Vertical Fin (down)
             asb.Wing(
                 name="Left Fin Down",
                 symmetric=False,
-                xsecs=[
-                    asb.WingXSec(
-                        xyz_le=[0.17, wing_geo['wingspan']/4, 0],
-                        chord=const.side_root_chord * vstab_geo['scale_side'],
-                        twist=0,
-                        airfoil=asb.Airfoil("naca0012"),
-                    ),
-                    asb.WingXSec(
-                        xyz_le=[0.17 + 0.05, wing_geo['wingspan']/4, -const.side_span * vstab_geo['scale_side']],
-                        chord=const.side_tip_chord * vstab_geo['scale_side'],
-                        twist=0,
-                        airfoil=asb.Airfoil("naca0012"),
-                    ),
-                ],
-            ),
+                xsecs=_fin_cross_section_xsecs(
+                    [0.17, wing_geo['wingspan']/4, 0],
+                    const.side_root_chord * vstab_geo['scale_side'],
+                    [0.17 + 0.05, wing_geo['wingspan']/4, -const.side_span * vstab_geo['scale_side']],
+                    const.side_tip_chord * vstab_geo['scale_side'],
+                    "rudder_left", rudder_chord_ratio),
+                ),
             # Right Vertical Fin (down)
             asb.Wing(
                 name="Right Fin Down",
                 symmetric=False,
-                xsecs=[
-                    asb.WingXSec(
-                        xyz_le=[0.17, -wing_geo['wingspan']/4, 0],
-                        chord=const.side_root_chord * vstab_geo['scale_side'],
-                        twist=0,
-                        airfoil=asb.Airfoil("naca0012"),
-                    ),
-                    asb.WingXSec(
-                        xyz_le=[0.17 + 0.05, -wing_geo['wingspan']/4, -const.side_span * vstab_geo['scale_side']],
-                        chord=const.side_tip_chord * vstab_geo['scale_side'],
-                        twist=0,
-                        airfoil=asb.Airfoil("naca0012"),
-                    ),
-                ],
+                xsecs=_fin_cross_section_xsecs(
+                    [0.17, -wing_geo['wingspan']/4, 0],
+                    const.side_root_chord * vstab_geo['scale_side'],
+                    [0.17 + 0.05, -wing_geo['wingspan']/4, -const.side_span * vstab_geo['scale_side']],
+                    const.side_tip_chord * vstab_geo['scale_side'],
+                    "rudder_right", rudder_chord_ratio),
             ),
         ],
         fuselages=[
@@ -113,7 +90,7 @@ def build_airplane_model(const, wing_geo, vstab_geo, profile_1, profile_2, contr
                     asb.FuselageXSec(xyz_c=[0.14, -wing_geo['wingspan']/4, 0], width = 0, height= 0),
                 ]
             )
-        ],
+        ]
     )
     return airplane
 
@@ -122,12 +99,12 @@ def plot_airplane_views(airplane):
     airplane.draw_three_view()
 
 def _main_wing_cross_section_xsecs(wing_geo, airfoil, tip_offset, root_offset, controls=None):
-    root_section, tip_section, half_section = wing_geo['root_chord'], wing_geo['tip_chord'], wing_geo['wingspan']/4
-    chord = lambda y: root_section+(tip_section - root_section)*y/half_section
-    twist_section_y = [0.0, root_offset, tip_section-tip_offset, tip_section]
+    root_section, tip_section, half_section_lenght = wing_geo['root_chord'], wing_geo['tip_chord'], wing_geo['wingspan']/2
+    chord = lambda y: root_section+(tip_section - root_section)*y/half_section_lenght
+    twist_section_y = [0.0, root_offset, half_section_lenght-tip_offset, half_section_lenght]
     twist_angel = [2.5,2.5,1,1]
 
-    station_of_sections = [0,root_offset,tip_section-tip_offset,tip_section]
+    station_of_sections = [0,root_offset,half_section_lenght-tip_offset,half_section_lenght]
     if controls is not None:
         station_of_sections+=[controls['y_inboard'], controls['y_outboard']]
     station_of_sections = sorted(station_of_sections)
@@ -150,6 +127,17 @@ def _main_wing_cross_section_xsecs(wing_geo, airfoil, tip_offset, root_offset, c
             airfoil=airfoil,
             control_surfaces=control_surfaces
         ))
+
+    return xsecs
+
+def _fin_cross_section_xsecs(xyz_root, root_chord, xyz_tip, tip_chord, rudder_name, rudder_chord_ratio):
+    fin_control_surfaces = []
+    if rudder_chord_ratio is not None:
+        fin_control_surfaces = [asb.ControlSurface(name=rudder_name, symmetric=True, hinge_point=1-rudder_chord_ratio)]
+    return [
+        asb.WingXSec(xyz_le=xyz_root, chord=root_chord, twist=0, airfoil=asb.Airfoil("naca0012"), control_surfaces=fin_control_surfaces),
+        asb.WingXSec(xyz_le=xyz_tip, chord=tip_chord, twist=0, airfoil=asb.Airfoil("naca0012"))
+    ]
 
 def build_airplane_model_old(const, wing_geo, vstab_geo, profile_1, profile_2):
     """Build and return Aerosandbox airplane model."""
