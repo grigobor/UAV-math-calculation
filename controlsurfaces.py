@@ -1,84 +1,41 @@
-"""
-Control surface sizing for the tailless tailsitter (elevons + fin rudders).
-
-Method: Gudmundsson / Raymer style. Pick a geometry from statistics, compute
-control derivatives from thin-airfoil flap effectiveness + strip theory, then
-check roll rate, trim authority and hover (prop-wash) control moments.
-Sweep a grid of (c_f/c, inboard station) and keep the smallest elevon that
-passes every requirement.
-
-Public entry points
--------------------
-size_control_surfaces(const, wing_geo, m0_final, aero_params, ...) -> dict
-print_control_summary(result)
-size_rudder(const, wing_geo, vstab_geo, ...)                       -> dict
-asb_control_derivatives(airplane, op_point, ...)   (optional cross-check)
-
-Conventions: angles in radians internally, results also given in degrees.
-Wing is treated as straight-tapered with a straight trailing edge, as built
-in buildinguav.py. y is measured from the centre line, 0 <= y <= b/2.
-"""
 import numpy as np
 import pandas as pd
+import inputs
 
 
-# ---------------------------------------------------------------------------
-# Basic aerodynamics helpers
-# ---------------------------------------------------------------------------
+def _get_const(const=None):
+    return const if const is not None else inputs.DesignConstants
+
 def flap_effectiveness(cf_c, eta=0.9):
-    """Plain-flap effectiveness tau from thin-airfoil theory, times a
-    viscous correction eta (about 0.8-1.0)."""
     theta_f = np.arccos(2.0 * cf_c - 1.0)
     tau = 1.0 - (theta_f - np.sin(theta_f)) / np.pi
     return eta * tau
 
-
 def wing_lift_slope(AR, mach=0.0):
-    """Finite-wing lift slope per rad (Helmbold, zero sweep), with a
-    Prandtl-Glauert correction."""
     beta = np.sqrt(max(1.0 - mach ** 2, 1e-6))
     return 2.0 * np.pi * AR / (2.0 + np.sqrt(4.0 + (AR * beta / 1.0) ** 2))
-
 
 def _chord(y, wing_geo):
     b = wing_geo["wingspan"]
     cr, ct = wing_geo["root_chord"], wing_geo["tip_chord"]
     return cr + (ct - cr) * 2.0 * y / b
 
-
 def _int_c(y1, y2, wing_geo):
-    """Integral of chord dy from y1 to y2 (one semi-span)."""
     b = wing_geo["wingspan"]
     cr, ct = wing_geo["root_chord"], wing_geo["tip_chord"]
     return cr * (y2 - y1) + (ct - cr) * (y2 ** 2 - y1 ** 2) / b
 
-
 def _int_c_y(y1, y2, wing_geo):
-    """Integral of chord * y dy from y1 to y2."""
     b = wing_geo["wingspan"]
     cr, ct = wing_geo["root_chord"], wing_geo["tip_chord"]
     return cr * (y2 ** 2 - y1 ** 2) / 2.0 + (ct - cr) * (2.0 / b) * (y2 ** 3 - y1 ** 3) / 3.0
 
-
 def _int_c_y2(y1, y2, wing_geo):
-    """Integral of chord * y^2 dy from y1 to y2."""
     b = wing_geo["wingspan"]
     cr, ct = wing_geo["root_chord"], wing_geo["tip_chord"]
     return cr * (y2 ** 3 - y1 ** 3) / 3.0 + (ct - cr) * (2.0 / b) * (y2 ** 4 - y1 ** 4) / 4.0
 
-
-# ---------------------------------------------------------------------------
-# Forward-flight control derivatives
-# ---------------------------------------------------------------------------
 def elevon_derivatives(wing_geo, cf_c, y1, y2, CL_alpha, CD0, l_e, eta=0.9):
-    """Return dict of elevon geometry and derivatives (per radian).
-
-    Parameters
-    ----------
-    cf_c : flap chord / local chord (constant along the span)
-    y1, y2 : inboard / outboard station of the elevon, m from centre line
-    l_e : moment arm, CG to elevon centroid (aft positive), m
-    """
     S, b, MAC = wing_geo["S_wing"], wing_geo["wingspan"], wing_geo["MAC"]
     tau = flap_effectiveness(cf_c, eta)
 
@@ -109,23 +66,12 @@ def roll_rate(C_ldelta, C_lp, delta_a, V, b):
     return -(C_ldelta / C_lp) * delta_a * (2.0 * V / b)
 
 
-# ---------------------------------------------------------------------------
-# Hover / transition: prop-wash control
-# ---------------------------------------------------------------------------
-def hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
+def hover_control(wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
                   slipstream_eff=0.8, l_e=0.1, thrust_ratio=1.0,
                   I_pitch=None, I_axial=None, delta_max=np.radians(25.0),
-                  fuselage_length=0.71):
-    """Moments available from elevons immersed in the prop slipstream.
+                  fuselage_length=0.71, const=None):
 
-    Pitch  : symmetric deflection, arm l_e (CG to elevon centroid).
-    Axial  : differential deflection (spin about the fuselage axis),
-             arm = prop_y (slipstream centre).
-
-    slipstream_eff derates q_slip for wake contraction / non-uniformity.
-    I_pitch, I_axial default to uniform-rod estimates; replace them with
-    real inertias from CAD as soon as you have them.
-    """
+    const = _get_const(const)
     g = const.g
     rho = const.air_density_sea_level
     W = m0_final * g
@@ -173,7 +119,7 @@ def hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y, eta=0.9,
 # ---------------------------------------------------------------------------
 # Elevon sizing driver
 # ---------------------------------------------------------------------------
-def size_control_surfaces(const, wing_geo, m0_final, aero_params,
+def size_control_surfaces(wing_geo, m0_final, aero_params,
                           delta_max_deg=25.0,
                           roll_rate_req_dps=60.0,
                           cm_trim=-0.02,
@@ -186,20 +132,8 @@ def size_control_surfaces(const, wing_geo, m0_final, aero_params,
                           cf_c_grid=(0.20, 0.25, 0.30, 0.35),
                           y_inner_frac_grid=(0.50, 0.40, 0.30, 0.20, 0.10),
                           eta=0.9, V_roll=None,
-                          I_pitch=None, I_axial=None):
-    """Find the smallest elevon meeting the requirements.
-
-    Requirements checked for every candidate
-    ----------------------------------------
-    1. roll rate  >= roll_rate_req_dps at V_roll (default cruise speed), using
-       the deflection left after trim: delta_a = delta_max - |delta_trim|.
-    2. trim deflection <= trim_fraction_max * delta_max at cm_trim.
-    3. hover pitch and axial angular acceleration >= hover_margin *
-       hover_accel_req (prop-wash elevons only).
-
-    cm_trim is the pitching moment about the CG the elevons must cancel
-    (e.g. wing Cm0 from the airfoil, about -0.02 from wingprofile.py).
-    """
+                          I_pitch=None, I_axial=None, const=None):
+    const = _get_const(const)
     b = wing_geo["wingspan"]
     MAC = wing_geo["MAC"]
     delta_max = np.radians(delta_max_deg)
@@ -229,7 +163,7 @@ def size_control_surfaces(const, wing_geo, m0_final, aero_params,
             delta_a = delta_max - abs(delta_trim)
             p = roll_rate(d["C_ldelta"], d["C_lp"], max(delta_a, 0.0), V, b)
 
-            h = hover_control(const, wing_geo, m0_final, cf_c, y1, y2, prop_y,
+            h = hover_control(wing_geo, m0_final, cf_c, y1, y2, prop_y, const=const,
                               eta=eta, l_e=l_e, I_pitch=I_pitch,
                               I_axial=I_axial, delta_max=delta_max)
 
@@ -303,16 +237,9 @@ def print_control_summary(result):
     print(f"{'=' * 60}\n")
 
 
-# ---------------------------------------------------------------------------
-# Rudder on the fins
-# ---------------------------------------------------------------------------
-def size_rudder(const, wing_geo, vstab_geo, cr_c=0.30, eta=0.9,
-                CL_alpha_v=None, delta_max_deg=25.0, l_v=None):
-    """Rudder yaw power C_n_delta_r for a given rudder chord ratio.
-
-    vstab_geo is the dict from calculate_vertical_stabilizer().
-    Rudder spans the full fin; S_r/S_v = cr_c.
-    """
+def size_rudder(wing_geo, vstab_geo, cr_c=0.30, eta=0.9,
+                CL_alpha_v=None, delta_max_deg=25.0, l_v=None, const=None):
+    const = _get_const(const)
     S, b = wing_geo["S_wing"], wing_geo["wingspan"]
     S_v = vstab_geo["total_area"]
     l_v = l_v if l_v is not None else vstab_geo["arm"]
@@ -329,18 +256,8 @@ def size_rudder(const, wing_geo, vstab_geo, cr_c=0.30, eta=0.9,
     }
 
 
-# ---------------------------------------------------------------------------
-# Optional: cross-check with AeroSandbox
-# ---------------------------------------------------------------------------
 def asb_control_derivatives(airplane, op_point, sym_name="elevon_sym",
                             asym_name="elevon_asym", d_deg=2.0):
-    """Finite-difference control derivatives (per rad) with AeroBuildup.
-
-    airplane must contain asb.ControlSurface objects named sym_name
-    (symmetric=True, pitch) and asym_name (symmetric=False, roll) on the
-    wing cross-sections. Returns dict with Cm_delta, Cl_delta (per rad)
-    for comparison with elevon_derivatives().
-    """
     import aerosandbox as asb
 
     d = np.radians(d_deg)
@@ -355,3 +272,21 @@ def asb_control_derivatives(airplane, op_point, sym_name="elevon_sym",
         "Cm_delta": float((plus_s["Cm"] - minus_s["Cm"]) / (2 * d)),
         "Cl_delta": float((plus_a["Cl"] - minus_a["Cl"]) / (2 * d)),
     }
+
+def control_params(result, rudder=None, rudder_chord_ratio=0.30, rudder_delta_max_deg=25.0):
+    b = result["best"]
+    params = {
+        "cf_c": float(b["cf_c"]),
+        "y_inboard": float(b["y_in_m"]),
+        "y_outboard": float(b["y_out_m"]),
+        "elevon_delta_max_deg": float(result["delta_max_deg"]),
+        "Cm_delta_e": float(b["C_mdelta"]),
+        "Cl_delta_a": float(b["C_ldelta"]),
+    }
+    if rudder is not None:
+        params.update({
+            "rudder_chord_ratio": float(rudder_chord_ratio),
+            "rudder_delta_max_deg": float(rudder_delta_max_deg),
+            "Cn_delta_r": float(rudder["C_ndelta_r"]),
+        })
+    return params
